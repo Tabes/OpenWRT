@@ -1,11 +1,3 @@
 {
-    "taskButtons.showCounter": true,
-    "taskButtons.buttons": [
-        {
-            "label": "🚀 Push",
-            "task": "🚀 Push to GitHub",
-            "tooltip": "Push all changes to GitHub"
-        }
-    ],
-    "ShortcutMenuBar.user01Command": "workbench.action.tasks.runTask|🚀 Push to GitHub"
+    "gitdoc.enabled": true
 }
