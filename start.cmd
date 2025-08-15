@@ -4,16 +4,19 @@
 ### Execute from USB: /mnt/usb/OpenWRT/start.cmd ###
 
 
-### USB mounten                             ###
-### mkdir -p /mnt/usb                       ###
-### mount /dev/sda1 /mnt/usb                ###
+### USB mounten                                 ###
+### mkdir -p /mnt/usb                           ###
+### mount /dev/sda1 /mnt/usb                    ###
 
-### Script ausführbar machen                ###
-### chmod +x /mnt/usb/OpenWRT/start.cmd     ###
+### Script ausführbar machen                    ###
+### chmod +x /mnt/usb/OpenWRT/start.cmd         ###
 
-### Script starten                          ###
-### cd /mnt/usb/OpenWRT                     ###
-### ./start.cmd                             ###
+### Windows-Zeilenendings entfernen
+### sed -i 's/\r$//' /mnt/usb/OpenWRT/start     ###
+
+### Script starten                              ###
+### cd /mnt/usb/OpenWRT                         ###
+### ./start.cmd                                 ###
 
 
 ### === PATH CONFIGURATION === ###
