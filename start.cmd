@@ -1,6 +1,6 @@
 #!/bin/ash
 ### BPI-R4 OpenWRT USB-to-System Copy Script ###
-### Copies all files from USB stick to /root/openWRT ###
+### Copies all files from USB Stick to /root/openWRT ###
 ### Execute from USB: /mnt/usb/OpenWRT/start.cmd ###
 
 ### === PATH CONFIGURATION === ###
