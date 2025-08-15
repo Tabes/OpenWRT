@@ -18,6 +18,7 @@ CONFIG_FILES="
 prepare.cfg
 interface.cfg
 network.cfg
+wifi.cfg
 firewall.cfg
 router.cfg
 upgrade.cfg
