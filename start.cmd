@@ -31,7 +31,7 @@ ERROR_LOG="/tmp/openwrt_errors_$(date +%Y%m%d_%H%M%S).log"
 PREPARE_CFG="${CONFIG_PATH}/prepare.cfg"
 INTERFACE_CFG="${CONFIG_PATH}/interface.cfg"
 NETWORK_CFG="${CONFIG_PATH}/network.cfg"
-UPDATE_CFG="${CONFIG_PATH}/update.cfg"
+UPDATE_CFG="${CONFIG_PATH}/upgrade.cfg"
 
 set -e  ### Exit on any error ###
 
