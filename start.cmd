@@ -16,25 +16,33 @@
 ### ./start.cmd                             ###
 
 
-set -e  ### Exit on any error ###
+### === PATH CONFIGURATION === ###
+USB_BASE_PATH="/mnt/usb/OpenWRT"
+CONFIG_PATH="${USB_BASE_PATH}/config"
 
-### === SCRIPT CONFIGURATION === ###
-SCRIPT_DIR="$(dirname "$0")"
-CONFIG_DIR="${SCRIPT_DIR}/config"
+### === SCRIPT VARIABLES === ###
 LOG_FILE="/tmp/openwrt_install_$(date +%Y%m%d_%H%M%S).log"
 ERROR_LOG="/tmp/openwrt_errors_$(date +%Y%m%d_%H%M%S).log"
 
+### === CONFIGURATION FILES ORDER === ###
+PREPARE_CFG="${CONFIG_PATH}/prepare.cfg"
+INTERFACE_CFG="${CONFIG_PATH}/interface.cfg"
+NETWORK_CFG="${CONFIG_PATH}/network.cfg"
+UPDATE_CFG="${CONFIG_PATH}/update.cfg"
+
+set -e  ### Exit on any error ###
+
 ### === LOGGING FUNCTIONS === ###
 log_message() {
-    local MESSAGE="$1"
-    local TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    MESSAGE="$1"
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$TIMESTAMP] $MESSAGE" | tee -a "$LOG_FILE"
     echo ""
 }
 
 log_command() {
-    local COMMAND="$1"
-    local TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    COMMAND="$1"
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$TIMESTAMP] EXECUTING: $COMMAND" | tee -a "$LOG_FILE"
 }
 
@@ -42,86 +50,42 @@ log_separator() {
     echo "================================================================================" | tee -a "$LOG_FILE"
 }
 
-### === SCRIPT HEADER === ###
-clear
-log_separator
-log_message "BPI-R4 OpenWRT Configuration Started"
-log_message "Script Directory: $SCRIPT_DIR"
-log_message "Config Directory: $CONFIG_DIR"
-log_message "Log File: $LOG_FILE"
-log_message "Error Log: $ERROR_LOG"
-log_separator
-
-### === ENVIRONMENT CHECK === ###
-log_message "Checking environment..."
-
-# Check if running as root
-if [ "$(id -u)" != "0" ]; then
-    log_message "ERROR: This script must be run as root"
-    exit 1
-fi
-
-# Check if config directory exists
-if [ ! -d "$CONFIG_DIR" ]; then
-    log_message "ERROR: Config directory not found: $CONFIG_DIR"
-    log_message "Expected USB structure: /mnt/usb/root/config/"
-    exit 1
-fi
-
-# List available config files
-log_message "Available configuration files:"
-ls -la "$CONFIG_DIR"/*.cfg 2>/dev/null | tee -a "$LOG_FILE" || {
-    log_message "WARNING: No .cfg files found in $CONFIG_DIR"
-}
-
-echo ""
-
-### === EXECUTION SEQUENCE === ###
-EXECUTION_ORDER=(
-    "prepare.cfg"
-    "interface.cfg" 
-    "network.cfg"
-    "upgrade.cfg"
-)
-
-log_message "Starting configuration sequence..."
-log_separator
-
-### === EXECUTE CONFIGURATION FILES === ###
-for CONFIG_FILE in "${EXECUTION_ORDER[@]}"; do
-    FULL_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
+execute_config() {
+    CONFIG_FILE="$1"
+    CONFIG_NAME=$(basename "$CONFIG_FILE")
     
     log_separator
-    log_message "Processing: $CONFIG_FILE"
+    log_message "Processing: $CONFIG_NAME"
     
     # Check if file exists
-    if [ ! -f "$FULL_PATH" ]; then
-        log_message "WARNING: $CONFIG_FILE not found, skipping..."
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log_message "WARNING: $CONFIG_NAME not found, skipping..."
         echo ""
-        continue
+        return 0
     fi
     
     # Make file executable
-    chmod +x "$FULL_PATH"
+    chmod +x "$CONFIG_FILE"
     
     # Log file info
-    log_message "File size: $(stat -c%s "$FULL_PATH") bytes"
-    log_message "File permissions: $(stat -c%A "$FULL_PATH")"
+    FILE_SIZE=$(stat -c%s "$CONFIG_FILE" 2>/dev/null || echo "unknown")
+    log_message "File size: $FILE_SIZE bytes"
     
     # Execute with error handling
-    log_command "$FULL_PATH"
+    log_command "$CONFIG_FILE"
     
-    if "$FULL_PATH" 2>&1 | tee -a "$LOG_FILE"; then
-        log_message "SUCCESS: $CONFIG_FILE completed successfully"
+    if sh "$CONFIG_FILE" 2>&1 | tee -a "$LOG_FILE"; then
+        log_message "SUCCESS: $CONFIG_NAME completed successfully"
         
         # Add separator after each script
         echo "" | tee -a "$LOG_FILE"
-        echo "--- End of $CONFIG_FILE ---" | tee -a "$LOG_FILE"
+        echo "--- End of $CONFIG_NAME ---" | tee -a "$LOG_FILE"
         echo "" | tee -a "$LOG_FILE"
+        return 0
     else
         EXIT_CODE=$?
-        log_message "ERROR: $CONFIG_FILE failed with exit code: $EXIT_CODE"
-        echo "ERROR in $CONFIG_FILE (Exit Code: $EXIT_CODE)" >> "$ERROR_LOG"
+        log_message "ERROR: $CONFIG_NAME failed with exit code: $EXIT_CODE"
+        echo "ERROR in $CONFIG_NAME (Exit Code: $EXIT_CODE)" >> "$ERROR_LOG"
         
         # Ask user if they want to continue
         echo ""
@@ -137,22 +101,73 @@ for CONFIG_FILE in "${EXECUTION_ORDER[@]}"; do
                 exit 1
                 ;;
             "r"|"R")
-                log_message "Retrying $CONFIG_FILE..."
-                if "$FULL_PATH" 2>&1 | tee -a "$LOG_FILE"; then
-                    log_message "SUCCESS: $CONFIG_FILE completed on retry"
+                log_message "Retrying $CONFIG_NAME..."
+                if sh "$CONFIG_FILE" 2>&1 | tee -a "$LOG_FILE"; then
+                    log_message "SUCCESS: $CONFIG_NAME completed on retry"
+                    return 0
                 else
-                    log_message "ERROR: $CONFIG_FILE failed again, continuing..."
+                    log_message "ERROR: $CONFIG_NAME failed again, continuing..."
+                    return 1
                 fi
                 ;;
             *)
                 log_message "Continuing with next script..."
+                return 1
                 ;;
         esac
     fi
-    
-    # Wait a moment between scripts
-    sleep 2
-done
+}
+
+### === SCRIPT HEADER === ###
+clear
+log_separator
+log_message "BPI-R4 OpenWRT Configuration Started"
+log_message "USB Base Path: $USB_BASE_PATH"
+log_message "Config Path: $CONFIG_PATH"
+log_message "Log File: $LOG_FILE"
+log_message "Error Log: $ERROR_LOG"
+log_separator
+
+### === ENVIRONMENT CHECK === ###
+log_message "Checking environment..."
+
+# Check if running as root
+if [ "$(id -u)" != "0" ]; then
+    log_message "ERROR: This script must be run as root"
+    exit 1
+fi
+
+# Check if config directory exists
+if [ ! -d "$CONFIG_PATH" ]; then
+    log_message "ERROR: Config directory not found: $CONFIG_PATH"
+    log_message "Expected USB structure: $USB_BASE_PATH/config/"
+    exit 1
+fi
+
+# List available config files
+log_message "Available configuration files:"
+ls -la "$CONFIG_PATH"/*.cfg 2>/dev/null | tee -a "$LOG_FILE" || {
+    log_message "WARNING: No .cfg files found in $CONFIG_PATH"
+}
+
+echo ""
+
+### === EXECUTE CONFIGURATION FILES === ###
+log_message "Starting configuration sequence..."
+log_separator
+
+# Execute in order
+execute_config "$PREPARE_CFG"
+sleep 2
+
+execute_config "$INTERFACE_CFG"
+sleep 2
+
+execute_config "$NETWORK_CFG"
+sleep 2
+
+execute_config "$UPDATE_CFG"
+sleep 2
 
 ### === FINAL SYSTEM STATUS === ###
 log_separator
