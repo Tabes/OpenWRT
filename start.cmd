@@ -1,7 +1,20 @@
 #!/bin/ash
 ### BPI-R4 OpenWRT Master Configuration Script ###
-### Executes all configuration files in sequence ###
-### Execute from USB: /mnt/usb/root/start.cmd ###
+### Executes all Configuration Files in Sequence ###
+### Execute from USB: /mnt/usb/OpenWRT/start.cmd ###
+
+
+### USB mounten                         ###
+### mkdir -p /mnt/usb                   ###
+### mount /dev/sda1 /mnt/usb            ###
+
+### Script ausführbar machen            ###
+### chmod +x /mnt/usb/root/start.cmd    ###
+
+### Script starten                      ###
+### cd /mnt/usb/root                    ###
+### ./start.cmd                         ###
+
 
 set -e  ### Exit on any error ###
 
