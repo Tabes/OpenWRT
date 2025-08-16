@@ -8,7 +8,7 @@
 ### mkdir -p /mnt/usb                               ###
 ### mount /dev/sda1 /mnt/usb                        ###
 
-### Script ausführbar machen                        ###
+### Script ausfÃ¼hrbar machen                        ###
 ### chmod +x /mnt/usb/OpenWRT/start.cmd             ###
 
 ### Windows-Zeilenendings entfernen
@@ -19,17 +19,16 @@
 ### ./start.cmd                                     ###
 
 
-### === PATH CONFIGURATION === ###
-USB_BASE_PATH="/mnt/usb/OpenWRT"
-TARGET_BASE_PATH="/root/openWRT"
-CONFIG_SOURCE_PATH="${USB_BASE_PATH}/config"
-CONFIG_TARGET_PATH="${TARGET_BASE_PATH}/config"
-HELPER_PATH="/root/helper"
-LOG_PATH="/root/logs"
+### === LOAD GLOBAL CONFIGURATION === ###
+GLOBAL_CONFIG="/root/openWRT/global.cfg"
+if [ ! -f "$GLOBAL_CONFIG" ]; then
+    echo "ERROR: Global configuration file not found: $GLOBAL_CONFIG"
+    echo "Please ensure global.cfg exists before running this script."
+    exit 1
+fi
 
-### === SCRIPT VARIABLES === ###
-LOG_FILE="$LOG_PATH/usb_copy_$(date +%Y%m%d_%H%M%S).log"
-ERROR_LOG="$LOG_PATH/usb_copy_errors_$(date +%Y%m%d_%H%M%S).log"
+### Load global configuration ###
+. "$GLOBAL_CONFIG"
 
 set -e  ### Exit on any error ###
 
