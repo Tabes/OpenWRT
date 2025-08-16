@@ -8,7 +8,7 @@
 ### mkdir -p /mnt/usb                               ###
 ### mount /dev/sda1 /mnt/usb                        ###
 
-### Script ausührbar machen                        ###
+### Script ausführbar machen                        ###
 ### chmod +x /mnt/usb/OpenWRT/start.cmd             ###
 
 ### Windows-Zeilenendings entfernen
