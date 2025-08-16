@@ -1,15 +1,20 @@
 #!/bin/ash
-### BPI-R4 OpenWRT Configuration Execution Script ###
+### BPI-R4 OpenWRT Configuration Master Script ###
 ### Executes all Configuration Files in Sequence ###
-### Usage: ./start.cmd [-YES] ###
+### Usage: ./start.cfg [-YES] ###
+
+### === GLOBAL CONFIGURATION === ###
+. /root/openWRT/config/global.cfg
 
 ### === PATH CONFIGURATION === ###
 SCRIPT_DIR="$(dirname "$0")"
-CONFIG_DIR="${SCRIPT_DIR}/config"
+CONFIG_DIR="${SCRIPT_DIR}"
 
 ### === SCRIPT VARIABLES === ###
-LOG_FILE="/tmp/openwrt_config_$(date +%Y%m%d_%H%M%S).log"
-ERROR_LOG="/tmp/openwrt_config_errors_$(date +%Y%m%d_%H%M%S).log"
+SCRIPT_NAME="$(basename "$0" .cfg)"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="$LOG_PATH/${SCRIPT_NAME}_${TIMESTAMP}.log"
+ERROR_LOG="$LOG_PATH/${SCRIPT_NAME}_errors_${TIMESTAMP}.log"
 AUTO_EXECUTE=false
 
 ### === CONFIGURATION FILE LIST === ###
@@ -45,6 +50,11 @@ for param in "$@"; do
             ;;
     esac
 done
+
+### === CREATE DIRECTORIES === ###
+mkdir -p "$LOG_PATH"
+mkdir -p "$BACKUP_PATH"
+mkdir -p "$HELPER_PATH"
 
 ### === LOGGING FUNCTIONS === ###
 log_message() {
@@ -137,7 +147,8 @@ execute_config_file() {
     log_command "$FULL_PATH"
     echo ""
     
-    if sh "$FULL_PATH" 2>&1 | tee -a "$LOG_FILE"; then
+    ### Source global.cfg in subshell for each config file ###
+    if (. "$CONFIG_DIR/global.cfg" && sh "$FULL_PATH") 2>&1 | tee -a "$LOG_FILE"; then
         EXEC_STATUS=0
         log_message "SUCCESS: $CONFIG_NAME completed successfully"
     else
@@ -158,7 +169,7 @@ execute_config_file() {
             case "$ERROR_CHOICE" in
                 "r"|"R")
                     log_message "Retrying $CONFIG_NAME..."
-                    if sh "$FULL_PATH" 2>&1 | tee -a "$LOG_FILE"; then
+                    if (. "$CONFIG_DIR/global.cfg" && sh "$FULL_PATH") 2>&1 | tee -a "$LOG_FILE"; then
                         log_message "SUCCESS: $CONFIG_NAME completed on retry"
                         EXEC_STATUS=0
                     else
@@ -196,7 +207,9 @@ execute_config_file() {
 ### === SCRIPT HEADER === ###
 clear
 log_separator
-log_message "BPI-R4 OpenWRT Configuration Execution Started"
+log_message "BPI-R4 OpenWRT Configuration Master Script Started"
+log_message "Config Version: $CONFIG_VERSION ($CONFIG_DATE)"
+log_message "Router Hostname: $ROUTER_HOSTNAME"
 log_message "Script Directory: $SCRIPT_DIR"
 log_message "Config Directory: $CONFIG_DIR"
 log_message "Log File: $LOG_FILE"
@@ -218,6 +231,24 @@ if [ ! -d "$CONFIG_DIR" ]; then
     log_message "ERROR: Config directory not found: $CONFIG_DIR"
     exit 1
 fi
+
+### Check if global.cfg exists ###
+if [ ! -f "$CONFIG_DIR/global.cfg" ]; then
+    log_message "ERROR: Global configuration file not found: $CONFIG_DIR/global.cfg"
+    exit 1
+fi
+
+### Display configuration variables ###
+log_message "Configuration Variables:"
+echo "  Router: $ROUTER_HOSTNAME (Country: $COUNTRY_CODE)" | tee -a "$LOG_FILE"
+echo "  LAN1: $LAN1_SUBNET ($LAN1_IP)" | tee -a "$LOG_FILE"
+echo "  LAN2: $LAN2_SUBNET ($LAN2_IP)" | tee -a "$LOG_FILE"
+echo "  LAN3: $LAN3_SUBNET ($LAN3_IP)" | tee -a "$LOG_FILE"
+echo "  Guest: $GUEST_SUBNET ($GUEST_IP)" | tee -a "$LOG_FILE"
+echo "  WiFi SSID: $MAIN_SSID" | tee -a "$LOG_FILE"
+echo "  Guest SSID: $GUEST_SSID" | tee -a "$LOG_FILE"
+
+echo ""
 
 ### Display available configuration files ###
 log_message "Available configuration files:"
@@ -287,9 +318,21 @@ uci show network 2>/dev/null | tee -a "$LOG_FILE" || log_message "No network con
 
 echo "" | tee -a "$LOG_FILE"
 
+### UCI DHCP configuration ###
+log_message "UCI DHCP Configuration:"
+uci show dhcp 2>/dev/null | tee -a "$LOG_FILE" || log_message "No DHCP config available"
+
+echo "" | tee -a "$LOG_FILE"
+
 ### Wireless devices ###
 log_message "Wireless Devices:"
 iw dev 2>/dev/null | tee -a "$LOG_FILE" || log_message "No wireless devices found"
+
+echo "" | tee -a "$LOG_FILE"
+
+### USB devices (for 5G modem) ###
+log_message "USB Devices:"
+lsusb 2>/dev/null | tee -a "$LOG_FILE" || log_message "lsusb not available"
 
 ### === EXECUTION SUMMARY === ###
 log_separator
@@ -314,11 +357,18 @@ fi
 
 log_message "Overall Status: $OVERALL_STATUS"
 
+log_message "Helper scripts available:"
+log_message "  $HELPER_PATH/network_status.sh - Show network status"
+log_message "  $HELPER_PATH/wifi_scan.sh - Scan for WiFi networks"
+log_message "  $HELPER_PATH/modem_test.sh - Test 5G modem"
+log_message "  $HELPER_PATH/network_test.sh - Test network connectivity"
+
 log_message "Recommended next steps:"
 log_message "1. Review configuration logs for any issues"
-log_message "2. Restart network services: /etc/init.d/network restart"
-log_message "3. Reboot system for complete activation: reboot"
-log_message "4. Access web interface: http://192.168.1.1"
+log_message "2. Test network connectivity: $HELPER_PATH/network_test.sh"
+log_message "3. Restart network services: /etc/init.d/network restart"
+log_message "4. Reboot system for complete activation: reboot"
+log_message "5. Access web interface: http://$LAN1_IP"
 
 log_separator
 log_message "BPI-R4 OpenWRT Configuration Process Completed"
