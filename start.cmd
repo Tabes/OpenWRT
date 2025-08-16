@@ -8,7 +8,7 @@
 ### mkdir -p /mnt/usb                               ###
 ### mount /dev/sda1 /mnt/usb                        ###
 
-### Script ausführbar machen                        ###
+### Script ausührbar machen                        ###
 ### chmod +x /mnt/usb/OpenWRT/start.cmd             ###
 
 ### Windows-Zeilenendings entfernen
@@ -24,10 +24,12 @@ USB_BASE_PATH="/mnt/usb/OpenWRT"
 TARGET_BASE_PATH="/root/openWRT"
 CONFIG_SOURCE_PATH="${USB_BASE_PATH}/config"
 CONFIG_TARGET_PATH="${TARGET_BASE_PATH}/config"
+HELPER_PATH="/root/helper"
+LOG_PATH="/root/logs"
 
 ### === SCRIPT VARIABLES === ###
-LOG_FILE="/tmp/usb_copy_$(date +%Y%m%d_%H%M%S).log"
-ERROR_LOG="/tmp/usb_copy_errors_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="$LOG_PATH/usb_copy_$(date +%Y%m%d_%H%M%S).log"
+ERROR_LOG="$LOG_PATH/usb_copy_errors_$(date +%Y%m%d_%H%M%S).log"
 
 set -e  ### Exit on any error ###
 
@@ -55,6 +57,8 @@ log_separator
 log_message "BPI-R4 OpenWRT USB-to-System copy operation started"
 log_message "USB Source Path: $USB_BASE_PATH"
 log_message "Target Path: $TARGET_BASE_PATH"
+log_message "Helper Path: $HELPER_PATH"
+log_message "Log Path: $LOG_PATH"
 log_message "Log File: $LOG_FILE"
 log_message "Error Log: $ERROR_LOG"
 log_separator
@@ -96,6 +100,30 @@ mkdir -p "$TARGET_BASE_PATH" || {
 log_command "mkdir -p $CONFIG_TARGET_PATH"
 mkdir -p "$CONFIG_TARGET_PATH" || {
     log_message "ERROR: Cannot create config directory: $CONFIG_TARGET_PATH"
+    exit 1
+}
+
+log_command "mkdir -p $HELPER_PATH"
+mkdir -p "$HELPER_PATH" || {
+    log_message "ERROR: Cannot create helper directory: $HELPER_PATH"
+    exit 1
+}
+
+log_command "mkdir -p $LOG_PATH"
+mkdir -p "$LOG_PATH" || {
+    log_message "ERROR: Cannot create log directory: $LOG_PATH"
+    exit 1
+}
+
+log_command "mkdir -p $HELPER_PATH"
+mkdir -p "$HELPER_PATH" || {
+    log_message "ERROR: Cannot create helper directory: $HELPER_PATH"
+    exit 1
+}
+
+log_command "mkdir -p $LOG_PATH"
+mkdir -p "$LOG_PATH" || {
+    log_message "ERROR: Cannot create log directory: $LOG_PATH"
     exit 1
 }
 
