@@ -5,7 +5,7 @@
 ################################################################################
 ### Project: OpenWRT Custom Builder
 ### Version: 1.0.0
-### Author:  OpenWRT Builder Team
+### Author:  Mawage (OpenWRT Builder Team)
 ### Date:    2025-08-19
 ### License: MIT
 ################################################################################
