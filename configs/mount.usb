@@ -1,0 +1,227 @@
+### Create /root/mount_usb.cmd with cat ###
+cat > /root/mount_usb.cmd << 'EOF'
+#!/bin/ash
+### BPI-R4 USB Mount and Configuration Starter Script ###
+### Mounts USB stick and starts OpenWRT configuration ###
+### Execute as root: /root/mount_usb.cmd ###
+
+set -e  ### Exit on any error ###
+
+### === SCRIPT VARIABLES === ###
+USB_MOUNT_POINT="/mnt/usb"
+USB_DEVICE="/dev/sda1"
+OPENWRT_PATH="$USB_MOUNT_POINT/OpenWRT"
+START_SCRIPT="$OPENWRT_PATH/start.cmd"
+LOG_FILE="/tmp/usb_mount_$(date +%Y%m%d_%H%M%S).log"
+
+### === LOGGING FUNCTIONS === ###
+log_message() {
+    MESSAGE="$1"
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$TIMESTAMP] $MESSAGE" | tee -a "$LOG_FILE"
+    echo ""
+}
+
+log_separator() {
+    echo "================================================================================" | tee -a "$LOG_FILE"
+}
+
+### === SCRIPT HEADER === ###
+clear
+log_separator
+log_message "BPI-R4 USB Mount and Configuration Starter"
+log_separator
+
+### === ENVIRONMENT CHECK === ###
+log_message "Checking environment..."
+
+### Check if running as root ###
+if [ "$(id -u)" != "0" ]; then
+    log_message "ERROR: This script must be run as root"
+    exit 1
+fi
+
+### === USB DEVICE DETECTION === ###
+log_message "Detecting USB devices..."
+
+### Show available USB devices ###
+echo "Available USB devices:" | tee -a "$LOG_FILE"
+lsusb 2>/dev/null | tee -a "$LOG_FILE" || log_message "lsusb not available"
+
+echo ""
+echo "Available block devices:" | tee -a "$LOG_FILE"
+lsblk 2>/dev/null | tee -a "$LOG_FILE" || {
+    ls -la /dev/sd* 2>/dev/null | tee -a "$LOG_FILE" || log_message "No block devices found"
+}
+
+### Check if USB device exists ###
+if [ ! -b "$USB_DEVICE" ]; then
+    log_message "WARNING: USB device $USB_DEVICE not found"
+    echo "Available devices:"
+    ls -la /dev/sd* 2>/dev/null || echo "No USB devices detected"
+    echo ""
+    read -p "Enter USB device path (e.g., /dev/sdb1): " CUSTOM_DEVICE
+    
+    if [ -n "$CUSTOM_DEVICE" ] && [ -b "$CUSTOM_DEVICE" ]; then
+        USB_DEVICE="$CUSTOM_DEVICE"
+        log_message "Using custom USB device: $USB_DEVICE"
+    else
+        log_message "ERROR: Invalid USB device specified"
+        exit 1
+    fi
+else
+    log_message "USB device detected: $USB_DEVICE"
+fi
+
+### === USB MOUNTING === ###
+log_separator
+log_message "Mounting USB device..."
+
+### Create mount point ###
+log_message "Creating mount point: $USB_MOUNT_POINT"
+mkdir -p "$USB_MOUNT_POINT"
+
+### Unmount if already mounted ###
+if mount | grep -q "$USB_MOUNT_POINT"; then
+    log_message "USB already mounted, unmounting first..."
+    umount "$USB_MOUNT_POINT" 2>/dev/null || true
+fi
+
+### Mount USB device ###
+log_message "Mounting $USB_DEVICE to $USB_MOUNT_POINT"
+if mount "$USB_DEVICE" "$USB_MOUNT_POINT"; then
+    log_message "SUCCESS: USB device mounted successfully"
+else
+    log_message "ERROR: Failed to mount USB device"
+    exit 1
+fi
+
+### === VERIFY USB CONTENT === ###
+log_separator
+log_message "Verifying USB content..."
+
+### Check if OpenWRT directory exists ###
+if [ ! -d "$OPENWRT_PATH" ]; then
+    log_message "ERROR: OpenWRT directory not found on USB"
+    echo "Expected structure: $OPENWRT_PATH"
+    echo "USB content:"
+    ls -la "$USB_MOUNT_POINT" | tee -a "$LOG_FILE"
+    exit 1
+fi
+
+log_message "OpenWRT directory found: $OPENWRT_PATH"
+
+### Show USB directory structure ###
+echo "USB OpenWRT structure:" | tee -a "$LOG_FILE"
+ls -la "$OPENWRT_PATH" | tee -a "$LOG_FILE"
+
+echo "" | tee -a "$LOG_FILE"
+echo "Config directory content:" | tee -a "$LOG_FILE"
+ls -la "$OPENWRT_PATH/config" 2>/dev/null | tee -a "$LOG_FILE" || log_message "Config directory not found"
+
+### === SCRIPT PREPARATION === ###
+log_separator
+log_message "Preparing configuration scripts..."
+
+### Check if start script exists ###
+if [ ! -f "$START_SCRIPT" ]; then
+    log_message "ERROR: Start script not found: $START_SCRIPT"
+    exit 1
+fi
+
+log_message "Start script found: $START_SCRIPT"
+
+### Make script executable ###
+log_message "Making start script executable..."
+chmod +x "$START_SCRIPT"
+
+### Remove Windows line endings ###
+log_message "Removing Windows line endings..."
+sed -i 's/\r$//' "$START_SCRIPT"
+
+### Make all config files executable and remove line endings ###
+log_message "Processing configuration files..."
+if [ -d "$OPENWRT_PATH/config" ]; then
+    for config_file in "$OPENWRT_PATH/config"/*.cfg; do
+        if [ -f "$config_file" ]; then
+            CONFIG_NAME=$(basename "$config_file")
+            echo "Processing: $CONFIG_NAME"
+            chmod +x "$config_file"
+            sed -i 's/\r$//' "$config_file"
+        fi
+    done
+    
+    ### Also process start.cmd in config directory ###
+    if [ -f "$OPENWRT_PATH/config/start.cmd" ]; then
+        echo "Processing: config/start.cmd"
+        chmod +x "$OPENWRT_PATH/config/start.cmd"
+        sed -i 's/\r$//' "$OPENWRT_PATH/config/start.cmd"
+    fi
+fi
+
+### === CONFIGURATION START === ###
+log_separator
+log_message "Ready to start OpenWRT configuration"
+log_separator
+
+echo "Configuration Summary:"
+echo "  USB Device: $USB_DEVICE"
+echo "  Mount Point: $USB_MOUNT_POINT"
+echo "  OpenWRT Path: $OPENWRT_PATH"
+echo "  Start Script: $START_SCRIPT"
+echo "  Log File: $LOG_FILE"
+echo ""
+
+### Ask user confirmation ###
+read -p "Start OpenWRT configuration now? [y/N]: " START_CONFIRM
+
+case "$START_CONFIRM" in
+    "y"|"Y")
+        log_message "Starting OpenWRT configuration..."
+        
+        ### Change to OpenWRT directory ###
+        cd "$OPENWRT_PATH"
+        
+        ### Execute start script ###
+        log_message "Executing: $START_SCRIPT"
+        
+        if ./start.cmd 2>&1 | tee -a "$LOG_FILE"; then
+            log_message "SUCCESS: OpenWRT configuration completed"
+        else
+            EXIT_CODE=$?
+            log_message "ERROR: OpenWRT configuration failed with exit code: $EXIT_CODE"
+            exit $EXIT_CODE
+        fi
+        ;;
+    *)
+        log_message "Configuration start cancelled by user"
+        echo ""
+        echo "To start configuration manually:"
+        echo "  cd $OPENWRT_PATH"
+        echo "  ./start.cmd"
+        echo ""
+        echo "To unmount USB:"
+        echo "  umount $USB_MOUNT_POINT"
+        ;;
+esac
+
+### === COMPLETION ### ###
+log_separator
+log_message "USB Mount and Configuration Process Completed"
+log_separator
+
+echo "USB remains mounted at: $USB_MOUNT_POINT"
+echo "Log saved to: $LOG_FILE"
+echo ""
+echo "To unmount USB when finished:"
+echo "  umount $USB_MOUNT_POINT"
+EOF
+
+### Make script executable ###
+chmod +x /root/mount_usb.cmd
+
+### Show confirmation ###
+echo "✓ /root/mount_usb.cmd created and made executable"
+echo ""
+echo "Usage:"
+echo "  /root/mount_usb.cmd"

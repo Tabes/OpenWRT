@@ -1,0 +1,19 @@
+# Build outputs
+*.img
+*.img.xz
+*.bin
+*.gz
+build/
+tmp/
+staging_dir/
+bin/
+builder/output/
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
