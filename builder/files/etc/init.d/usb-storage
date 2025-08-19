@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+START=19
+STOP=50
+start() {
+    echo "Loading USB storage modules for BPI-R4..."
+    modprobe scsi_mod 2>/dev/null || true
+    modprobe sd_mod 2>/dev/null || true
+    modprobe usb-storage 2>/dev/null || true
+    modprobe vfat 2>/dev/null || true
+    modprobe nls_cp437 2>/dev/null || true
+    echo "USB storage modules loaded successfully"
+}
+stop() {
+    rmmod usb-storage 2>/dev/null || true
+    rmmod sd_mod 2>/dev/null || true
+    rmmod scsi_mod 2>/dev/null || true
+}

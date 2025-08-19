@@ -1,0 +1,14 @@
+# USB Storage Support
+scsi_mod
+sd_mod
+usb-storage
+vfat
+nls_cp437
+nls_iso8859_1
+# WiFi 7 Support
+mt7996
+# 5G Modem Support
+option
+qmi_wwan
+cdc_mbim
+cdc_ncm
