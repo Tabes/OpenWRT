@@ -27,9 +27,11 @@ else
     echo "   Creating default configuration..."
     mkdir -p "$SCRIPT_DIR/config"
     cat > "$BUILDER_CONFIG" << 'EOF'
+
 ################################################################################
 ### Builder Configuration
 ################################################################################
+
 ### Path Configuration ###
 OUTPUT_DIR="$SCRIPT_DIR/output"
 WORK_DIR="$SCRIPT_DIR/work"
