@@ -12,6 +12,12 @@ SCRIPT_VERSION="1.0.2"
 
 set -e
 
+### Change to root directory to avoid issues if current directory gets deleted ###
+cd / || {
+    echo "ERROR: Cannot change to root directory"
+    exit 1
+}
+
 ################################################################################
 ### CONFIGURATION
 ################################################################################
