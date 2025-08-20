@@ -20,6 +20,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+### Load builder configuration first ###
+BUILDER_CONFIG="$SCRIPT_DIR/config/builder.cfg"
+if [ -f "$BUILDER_CONFIG" ]; then
+    source "$BUILDER_CONFIG"
+fi
+
+### Load global configuration ###
+GLOBAL_CONFIG="$PROJECT_ROOT/config/global.cfg"
+if [ -f "$GLOBAL_CONFIG" ]; then
+    source "$GLOBAL_CONFIG"
+fi
+
 ### Load helper functions ###
 if [ -f "$SCRIPT_DIR/helper.sh" ]; then
     source "$SCRIPT_DIR/helper.sh"
@@ -27,10 +39,6 @@ else
     echo "ERROR: Helper functions not found at $SCRIPT_DIR/helper.sh"
     exit 1
 fi
-
-### Load configurations ###
-load_config "$SCRIPT_DIR/config/builder.cfg" false
-load_config "$PROJECT_ROOT/config/global.cfg" false
 
 ################################################################################
 ### DEFAULT CONFIGURATION
