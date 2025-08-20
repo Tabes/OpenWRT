@@ -3,12 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.3
+### Version: 1.0.5
 ### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.3"
+SCRIPT_VERSION="1.0.5"
 clear
 
 ################################################################################
@@ -209,6 +209,215 @@ check_target_directory() {
 }
 
 ################################################################################
+### GIT VERSION CHECKING
+################################################################################
+
+### Professional Git version checking function ###
+check_git_version() {
+    local repo_dir="$1"
+    local script_file="$2"
+    local branch="${3:-main}"
+    local check_type="${4:-smart}"
+    
+    # Validate parameters
+    if [ ! -d "$repo_dir" ]; then
+        echo "ERROR: Repository directory not found: $repo_dir"
+        return 3
+    fi
+    
+    if [ ! -d "$repo_dir/.git" ]; then
+        echo "ERROR: Not a git repository: $repo_dir"
+        return 3
+    fi
+    
+    cd "$repo_dir"
+    
+    # Quick network check
+    if ! git ls-remote origin >/dev/null 2>&1; then
+        echo "NETWORK_ERROR: Cannot reach remote repository"
+        return 3
+    fi
+    
+    case "$check_type" in
+        "tags")
+            _check_version_by_tags "$repo_dir" "$branch"
+            ;;
+        "commits")
+            _check_version_by_commits "$repo_dir" "$branch"
+            ;;
+        "file")
+            _check_file_version "$repo_dir" "$script_file" "$branch"
+            ;;
+        "smart"|*)
+            _smart_version_check "$repo_dir" "$script_file" "$branch"
+            ;;
+    esac
+}
+
+### Tag-based version checking ###
+_check_version_by_tags() {
+    local repo_dir="$1"
+    local branch="$2"
+    cd "$repo_dir"
+    
+    # Fetch latest tags
+    if ! git fetch --tags >/dev/null 2>&1; then
+        echo "FETCH_ERROR: Cannot fetch tags"
+        return 3
+    fi
+    
+    # Get current tag (if on tagged commit)
+    local current_tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
+    
+    # Get latest tag
+    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+    
+    if [ -z "$latest_tag" ]; then
+        echo "NO_TAGS: Repository has no version tags"
+        return 2
+    fi
+    
+    if [ -n "$current_tag" ]; then
+        if [ "$current_tag" != "$latest_tag" ]; then
+            echo "UPDATE_AVAILABLE: Tag update available"
+            echo "CURRENT_VERSION: $current_tag"
+            echo "LATEST_VERSION: $latest_tag"
+            return 0
+        else
+            echo "UP_TO_DATE: On latest tag"
+            echo "VERSION: $current_tag"
+            return 1
+        fi
+    else
+        echo "NOT_ON_TAG: Current commit is not tagged"
+        echo "LATEST_TAG: $latest_tag"
+        local commits_since=$(git rev-list --count $latest_tag..HEAD 2>/dev/null || echo "unknown")
+        echo "COMMITS_SINCE_TAG: $commits_since"
+        return 0
+    fi
+}
+
+### Commit-based version checking ###
+_check_version_by_commits() {
+    local repo_dir="$1"
+    local branch="$2"
+    cd "$repo_dir"
+    
+    # Fetch latest commits
+    if ! git fetch origin "$branch" >/dev/null 2>&1; then
+        echo "FETCH_ERROR: Cannot fetch branch $branch"
+        return 3
+    fi
+    
+    # Compare hashes
+    local local_hash=$(git rev-parse HEAD 2>/dev/null)
+    local remote_hash=$(git rev-parse "origin/$branch" 2>/dev/null)
+    
+    if [ -z "$local_hash" ] || [ -z "$remote_hash" ]; then
+        echo "HASH_ERROR: Cannot determine commit hashes"
+        return 3
+    fi
+    
+    if [ "$local_hash" != "$remote_hash" ]; then
+        local commits_behind=$(git rev-list --count HEAD..origin/$branch 2>/dev/null || echo "unknown")
+        echo "UPDATE_AVAILABLE: Commits available"
+        echo "COMMITS_BEHIND: $commits_behind"
+        echo "LOCAL_HASH: ${local_hash:0:8}"
+        echo "REMOTE_HASH: ${remote_hash:0:8}"
+        return 0
+    else
+        echo "UP_TO_DATE: On latest commit"
+        echo "HASH: ${local_hash:0:8}"
+        return 1
+    fi
+}
+
+### File-specific version checking ###
+_check_file_version() {
+    local repo_dir="$1"
+    local file_path="$2"
+    local branch="$3"
+    cd "$repo_dir"
+    
+    if [ ! -f "$file_path" ]; then
+        echo "FILE_ERROR: File not found: $file_path"
+        return 3
+    fi
+    
+    # Fetch latest
+    if ! git fetch origin "$branch" >/dev/null 2>&1; then
+        echo "FETCH_ERROR: Cannot fetch branch $branch"
+        return 3
+    fi
+    
+    # Check if specific file changed
+    local local_hash=$(git log -1 --format="%H" -- "$file_path" 2>/dev/null)
+    local remote_hash=$(git log -1 --format="%H" "origin/$branch" -- "$file_path" 2>/dev/null)
+    
+    if [ -z "$local_hash" ] || [ -z "$remote_hash" ]; then
+        echo "FILE_HASH_ERROR: Cannot determine file change history"
+        return 3
+    fi
+    
+    if [ "$local_hash" != "$remote_hash" ]; then
+        echo "FILE_CHANGED: File has updates"
+        echo "FILE: $file_path"
+        local local_date=$(git log -1 --format="%cd" --date=short -- "$file_path" 2>/dev/null)
+        local remote_date=$(git log -1 --format="%cd" --date=short "origin/$branch" -- "$file_path" 2>/dev/null)
+        echo "LOCAL_CHANGE: $local_date"
+        echo "REMOTE_CHANGE: $remote_date"
+        return 0
+    else
+        echo "FILE_UNCHANGED: File is up to date"
+        echo "FILE: $file_path"
+        return 1
+    fi
+}
+
+### Smart version checking with optimized fetching ###
+_smart_version_check() {
+    local repo_dir="$1"
+    local script_file="$2"
+    local branch="$3"
+    cd "$repo_dir"
+    
+    # Optimize fetching: only fetch if needed (older than 5 minutes)
+    local last_fetch=$(stat -c %Y .git/FETCH_HEAD 2>/dev/null || echo 0)
+    local current_time=$(date +%s)
+    local fetch_age=$((current_time - last_fetch))
+    
+    if [ $fetch_age -gt 300 ]; then
+        if ! git fetch origin "$branch" >/dev/null 2>&1; then
+            echo "FETCH_ERROR: Cannot fetch updates"
+            return 3
+        fi
+    fi
+    
+    # Strategy 1: Try tag-based version checking first
+    local tag_result=$(_check_version_by_tags "$repo_dir" "$branch" 2>/dev/null | head -1)
+    
+    if [[ "$tag_result" =~ ^(UPDATE_AVAILABLE|UP_TO_DATE): ]]; then
+        echo "$tag_result"
+        local tag_details=$(_check_version_by_tags "$repo_dir" "$branch" 2>/dev/null | tail -n +2)
+        echo "$tag_details"
+        return ${PIPESTATUS[0]}
+    fi
+    
+    # Strategy 2: Fallback to commit comparison
+    echo "FALLBACK: Using commit-based checking"
+    _check_version_by_commits "$repo_dir" "$branch"
+    local commit_result=$?
+    
+    # Strategy 3: If script file specified, also check file-specific changes
+    if [ -n "$script_file" ] && [ -f "$script_file" ]; then
+        echo "FILE_CHECK: Checking $script_file specifically"
+        _check_file_version "$repo_dir" "$script_file" "$branch" | grep -E "^(FILE_CHANGED|FILE_UNCHANGED):"
+    fi
+    
+    return $commit_result
+}
+
+################################################################################
 ### SELF-UPDATE MECHANISM
 ################################################################################
 
@@ -218,7 +427,7 @@ get_script_version() {
     grep "^SCRIPT_VERSION=" "$script_file" 2>/dev/null | cut -d'"' -f2 || echo ""
 }
 
-### Combined version check ###
+### Enhanced version check using git ###
 is_newer_version() {
     local current_script="$0"
     local project_script="$TARGET_DIR/gitclone.sh"
@@ -226,6 +435,32 @@ is_newer_version() {
     if [ ! -f "$project_script" ]; then
         return 1
     fi
+    
+    print_info "Using professional git version checking..."
+    
+    # Use our new git version checking function
+    local git_result=$(check_git_version "$TARGET_DIR" "gitclone.sh" "$PROJECT_BRANCH" "file")
+    
+    # Parse result
+    if echo "$git_result" | grep -q "FILE_CHANGED:"; then
+        print_info "Git detected file changes:"
+        echo "$git_result" | grep -E "^(FILE|LOCAL_CHANGE|REMOTE_CHANGE):" | sed 's/^/  /'
+        return 0
+    elif echo "$git_result" | grep -q "FILE_UNCHANGED:"; then
+        print_info "Git confirms file is unchanged"
+        return 1
+    else
+        # Fallback to traditional method
+        print_warning "Git check inconclusive, using fallback method"
+        _fallback_version_check "$current_script" "$project_script"
+        return $?
+    fi
+}
+
+### Fallback version check method ###
+_fallback_version_check() {
+    local current_script="$1"
+    local project_script="$2"
     
     ### First check: File timestamp ###
     local current_time=$(stat -c %Y "$current_script" 2>/dev/null || echo 0)
@@ -238,7 +473,7 @@ is_newer_version() {
     ### Check version number first (more reliable) ###
     if [ -n "$current_version" ] && [ -n "$project_version" ]; then
         if [ "$project_version" != "$current_version" ]; then
-            print_info "Version update available:"
+            print_info "Version number difference detected:"
             print_info "  Current: v$current_version"
             print_info "  Project: v$project_version"
             return 0
@@ -262,15 +497,19 @@ check_for_updates() {
         return 0
     fi
     
-    print_info "Checking for script updates..."
+    print_info "Checking for script updates using git analysis..."
     
-    ### First: Pull latest repository changes to ensure we have newest gitclone.sh ###
-    cd "$TARGET_DIR"
-    if git fetch origin "$PROJECT_BRANCH" >/dev/null 2>&1; then
-        print_success "Repository information updated"
+    ### Use git version checking for repository status ###
+    local repo_status=$(check_git_version "$TARGET_DIR" "gitclone.sh" "$PROJECT_BRANCH" "commits")
+    
+    if echo "$repo_status" | grep -q "UPDATE_AVAILABLE:"; then
+        print_info "Repository updates detected:"
+        echo "$repo_status" | grep -E "^(COMMITS_BEHIND|LOCAL_HASH|REMOTE_HASH):" | sed 's/^/  /'
+    elif echo "$repo_status" | grep -q "UP_TO_DATE:"; then
+        print_info "Repository is up to date"
     else
-        print_warning "Could not fetch latest repository information"
-        return 0
+        print_warning "Cannot determine repository status"
+        print_info "$repo_status"
     fi
     
     local project_script="$TARGET_DIR/gitclone.sh"
