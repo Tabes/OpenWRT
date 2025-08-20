@@ -9,6 +9,7 @@
 ################################################################################
 
 SCRIPT_VERSION="1.0.2"
+clear
 
 ################################################################################
 ### SAFETY: Ensure we're in a safe directory before anything else
@@ -29,7 +30,7 @@ set -e
 ### CONFIGURATION
 ################################################################################
 
-### Project settings ###
+### Project Settings ###
 PROJECT_URL="https://github.com/Tabes/OpenWRT.git"
 TARGET_DIR="/opt/openWRT"
 PROJECT_BRANCH="${PROJECT_BRANCH:-main}"
@@ -175,7 +176,7 @@ is_newer_version() {
 }
 
 ### Check if target directory exists and is valid for updates ###
-check_existing_installation() {
+check_target_directory() {
     ### If directory doesn't exist, this is first installation ###
     if [ ! -d "$TARGET_DIR" ]; then
         return 1  # No existing installation
@@ -206,7 +207,7 @@ check_existing_installation() {
 ### Enhanced update check ###
 check_for_updates() {
     ### Check what we have ###
-    check_existing_installation
+    check_target_directory
     local install_status=$?
     
     case $install_status in
