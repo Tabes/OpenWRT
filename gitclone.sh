@@ -3,10 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.0
-### Date:    2025-08-19
+### Version: 1.0.1
+### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
+
+SCRIPT_VERSION="1.0.1"
 
 set -e
 
@@ -114,6 +116,115 @@ check_command() {
 }
 
 ################################################################################
+### SELF-UPDATE MECHANISM
+################################################################################
+
+### Extract version from script ###
+get_script_version() {
+    local script_file="$1"
+    grep "^SCRIPT_VERSION=" "$script_file" 2>/dev/null | cut -d'"' -f2 || echo ""
+}
+
+### Combined version check ###
+is_newer_version() {
+    local current_script="$0"
+    local project_script="$TARGET_DIR/gitclone.sh"
+    
+    if [ ! -f "$project_script" ]; then
+        return 1
+    fi
+    
+    ### First check: File timestamp ###
+    local current_time=$(stat -c %Y "$current_script" 2>/dev/null || echo 0)
+    local project_time=$(stat -c %Y "$project_script" 2>/dev/null || echo 0)
+    
+    ### Second check: Version number (if available) ###
+    local current_version=$(get_script_version "$current_script")
+    local project_version=$(get_script_version "$project_script")
+    
+    ### Check version number first (more reliable) ###
+    if [ -n "$current_version" ] && [ -n "$project_version" ]; then
+        if [ "$project_version" != "$current_version" ]; then
+            print_info "Version update available:"
+            print_info "  Current: v$current_version"
+            print_info "  Project: v$project_version"
+            return 0
+        fi
+    ### Fallback to timestamp if no version numbers ###
+    elif [ "$project_time" -gt "$current_time" ]; then
+        print_info "Newer file found (timestamp based):"
+        print_info "  Current: $(date -d @$current_time '+%Y-%m-%d %H:%M:%S')"
+        print_info "  Project: $(date -d @$project_time '+%Y-%m-%d %H:%M:%S')"
+        return 0
+    fi
+    
+    return 1
+}
+
+### Check for updated version in project ###
+check_for_updates() {
+    local project_script="$TARGET_DIR/gitclone.sh"
+    local current_script="$0"
+    
+    ### Skip if we ARE the project version ###
+    if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
+        return 0
+    fi
+    
+    ### Check if project version is newer ###
+    if is_newer_version; then
+        if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
+            echo ""
+            if ask_yes_no "Use updated version from project?" "yes"; then
+                exec_updated_version "$project_script"
+            else
+                print_warning "Continuing with current version"
+            fi
+        elif [ "$FORCE_MODE" = "true" ]; then
+            exec_updated_version "$project_script"
+        fi
+    fi
+}
+
+### Execute updated version ###
+exec_updated_version() {
+    local updated_script="$1"
+    
+    print_info "Switching to updated version..."
+    print_info "Executing: $updated_script"
+    
+    ### Make sure it's executable ###
+    chmod +x "$updated_script"
+    
+    ### Execute with all original arguments ###
+    exec "$updated_script" "$@"
+}
+
+### Ask yes/no question ###
+ask_yes_no() {
+    local question="$1"
+    local default="$2"
+    
+    local prompt="$question"
+    case "$default" in
+        yes|y) prompt="$prompt [Y/n]" ;;
+        no|n)  prompt="$prompt [y/N]" ;;
+        *)     prompt="$prompt [y/n]" ;;
+    esac
+    
+    while true; do
+        read -p "$prompt: " answer
+        answer="${answer:-$default}"
+        
+        case "$answer" in
+            yes|y|Y|YES) return 0 ;;
+            no|n|N|NO)   return 1 ;;
+            *) print_warning "Please answer yes or no" ;;
+        esac
+    done
+}
+
+################################################################################
 ### MAIN FUNCTIONS
 ################################################################################
 
@@ -200,7 +311,7 @@ create_symlinks() {
     
     ### Global config symlink ###
     local global_config="$TARGET_DIR/builder/config/global.cfg"
-    local target_config="$TARGET_DIR/configs/global.cfg"
+    local target_config="$TARGET_DIR/config/global.cfg"
     
     if [ -f "$target_config" ]; then
         ### Remove existing symlink if present ###
@@ -210,7 +321,7 @@ create_symlinks() {
         
         ### Create new symlink ###
         cd "$TARGET_DIR/builder/config"
-        ln -sf "../../configs/global.cfg" "global.cfg"
+        ln -sf "../../config/global.cfg" "global.cfg"
         print_success "Created global.cfg symlink"
     else
         print_warning "Global config not found, skipping symlink creation"
@@ -226,7 +337,7 @@ validate_installation() {
         "$TARGET_DIR/builder"
         "$TARGET_DIR/builder/scripts"
         "$TARGET_DIR/builder/config"
-        "$TARGET_DIR/configs"
+        "$TARGET_DIR/config"
     )
     
     for dir in "${required_dirs[@]}"; do
@@ -376,8 +487,11 @@ done
 main() {
     ### Show header ###
     if [ "$QUIET_MODE" != "true" ]; then
-        print_header "OpenWRT Builder - Git Clone Setup v1.0.0"
+        print_header "OpenWRT Builder - Git Clone Setup v$SCRIPT_VERSION"
     fi
+    
+    ### Check for updates BEFORE doing anything else ###
+    check_for_updates
     
     ### Check prerequisites ###
     check_root
