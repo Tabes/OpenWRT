@@ -30,7 +30,7 @@ set -e
 ### CONFIGURATION
 ################################################################################
 
-### Project Settings ###
+### Project settings ###
 PROJECT_URL="https://github.com/Tabes/OpenWRT.git"
 TARGET_DIR="/opt/openWRT"
 PROJECT_BRANCH="${PROJECT_BRANCH:-main}"
@@ -45,11 +45,11 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 ### Symbols ###
-SUCCESS="✅"
-ERROR="❌"
-WARNING="⚠️"
-INFO="ℹ️"
-ARROW="➤"
+SUCCESS="âœ…"
+ERROR="âŒ"
+WARNING="âš ï¸"
+INFO="â„¹ï¸"
+ARROW="âž¤"
 
 ################################################################################
 ### HELPER FUNCTIONS
@@ -178,17 +178,29 @@ is_newer_version() {
 ### Check if target directory exists and is valid for updates ###
 check_target_directory() {
     ### If directory doesn't exist, this is first installation ###
-    if [ ! -d "$TARGET_DIR" ]; then
-        return 1  # No existing installation
-    fi
-    
-    ### Check if it looks like a valid OpenWRT installation ###
+	if [ ! -d "$TARGET_DIR" ]; then
+		print_info "Target directory does not exist - preparing for fresh installation"
+		
+		echo "$TARGET_DIR"
+		### Create parent directory and set permissions ###
+		mkdir -p "$TARGET_DIR" || {
+			error_exit "Cannot create parent directory: $(dirname "$TARGET_DIR")"
+		}
+		
+		### Ensure proper ownership of parent directory ###
+		chown root:root "$TARGET_DIR" 2>/dev/null || true
+		
+		print_success "Prepared for fresh installation"
+		return 1  # No existing installation, but ready for new one
+	fi
+
+    ### Check if it looks like a valid GitHub Installation ###
     if [ ! -d "$TARGET_DIR/.git" ]; then
         print_warning "Target directory exists but is not a git repository"
         return 2  # Invalid installation
     fi
     
-    ### Check if it's our OpenWRT project ###
+    ### Check if it's our GitHub Project ###
     if [ -d "$TARGET_DIR/.git" ]; then
         cd "$TARGET_DIR"
         local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
@@ -456,9 +468,9 @@ show_summary() {
     
     ### Project information ###
     print_info "Project Details:"
-    echo "  • Repository: $PROJECT_URL"
-    echo "  • Branch:     $PROJECT_BRANCH"
-    echo "  • Location:   $TARGET_DIR"
+    echo "  â€¢ Repository: $PROJECT_URL"
+    echo "  â€¢ Branch:     $PROJECT_BRANCH"
+    echo "  â€¢ Location:   $TARGET_DIR"
     echo ""
     
     ### Git information ###
@@ -469,9 +481,9 @@ show_summary() {
         local commit_msg=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
         
         print_info "Git Information:"
-        echo "  • Commit:     $commit_hash"
-        echo "  • Date:       $commit_date"
-        echo "  • Message:    $commit_msg"
+        echo "  â€¢ Commit:     $commit_hash"
+        echo "  â€¢ Date:       $commit_date"
+        echo "  â€¢ Message:    $commit_msg"
         echo ""
     fi
     
@@ -523,11 +535,11 @@ show_usage() {
     echo ""
     echo "DESCRIPTION:"
     echo "    This script will:"
-    echo "    • Remove any existing installation"
-    echo "    • Clone the OpenWRT project from GitHub"
-    echo "    • Set proper file permissions"
-    echo "    • Create configuration symlinks"
-    echo "    • Validate the installation"
+    echo "    â€¢ Remove any existing installation"
+    echo "    â€¢ Clone the OpenWRT project from GitHub"
+    echo "    â€¢ Set proper file permissions"
+    echo "    â€¢ Create configuration symlinks"
+    echo "    â€¢ Validate the installation"
     echo ""
 }
 
@@ -568,21 +580,22 @@ main() {
         print_header "OpenWRT Builder - Git Clone Setup v$SCRIPT_VERSION"
     fi
     
-    ### Check for updates BEFORE doing anything else ###
-    check_for_updates
-    
     ### Check prerequisites ###
     check_root
     check_command "git" "git"
+	
+    ### Check for updates BEFORE doing anything else ###
+    check_for_updates
     
+    echo 'check_for_updates... done'
     ### Show what will be done ###
     if [ "$QUIET_MODE" != "true" ]; then
         print_info "This script will:"
-        echo "  • Remove existing installation (if any)"
-        echo "  • Clone OpenWRT project from GitHub"
-        echo "  • Set proper permissions"
-        echo "  • Create configuration links"
-        echo "  • Validate installation"
+        echo "  â€¢ Remove existing installation (if any)"
+        echo "  â€¢ Clone OpenWRT project from GitHub"
+        echo "  â€¢ Set proper permissions"
+        echo "  â€¢ Create configuration links"
+        echo "  â€¢ Validate installation"
         echo ""
         
         if [ "$FORCE_MODE" != "true" ]; then
