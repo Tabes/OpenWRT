@@ -3,12 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.9
+### Version: 1.0.3
 ### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.9"
+SCRIPT_VERSION="1.0.3"
 clear
 
 ################################################################################
@@ -263,6 +263,16 @@ check_for_updates() {
     fi
     
     print_info "Checking for script updates..."
+    
+    ### First: Pull latest repository changes to ensure we have newest gitclone.sh ###
+    cd "$TARGET_DIR"
+    if git fetch origin "$PROJECT_BRANCH" >/dev/null 2>&1; then
+        print_success "Repository information updated"
+    else
+        print_warning "Could not fetch latest repository information"
+        return 0
+    fi
+    
     local project_script="$TARGET_DIR/gitclone.sh"
     local current_script="$0"
     
@@ -441,7 +451,7 @@ create_symlinks() {
     
     ### Global config symlink ###
     local global_config="$TARGET_DIR/builder/config/global.cfg"
-    local target_config="$TARGET_DIR/configs/global.cfg"
+    local target_config="$TARGET_DIR/config/global.cfg"
     
     if [ -f "$target_config" ]; then
         ### Remove existing symlink if present ###
@@ -451,7 +461,7 @@ create_symlinks() {
         
         ### Create new symlink ###
         cd "$TARGET_DIR/builder/config"
-        ln -sf "../../configs/global.cfg" "global.cfg"
+        ln -sf "../../config/global.cfg" "global.cfg"
         print_success "Created global.cfg symlink"
     else
         print_warning "Global config not found, skipping symlink creation"
@@ -467,7 +477,7 @@ validate_installation() {
         "$TARGET_DIR/builder"
         "$TARGET_DIR/builder/scripts"
         "$TARGET_DIR/builder/config"
-        "$TARGET_DIR/configs"
+        "$TARGET_DIR/config"
     )
     
     for dir in "${required_dirs[@]}"; do
