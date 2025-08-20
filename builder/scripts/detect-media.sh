@@ -481,44 +481,61 @@ export_device_info() {
 
 ### Show usage information ###
 show_usage() {
-    cat << EOF
-################################################################################
-### OpenWRT Builder - Storage Device Detection
-################################################################################
-
-USAGE:
-    $0 [OPTIONS] [COMMAND]
-
-COMMANDS:
-    detect          Detect and list all suitable devices (default)
-    select          Interactive device selection
-    export [FILE]   Export device information to file
-    list-all        Show all block devices (including unsuitable)
+    print_header "OpenWRT Builder - Storage Device Detection v1.0.0"
     
-OPTIONS:
-    -h, --help         Show this help message
-    -q, --quiet        Quiet mode (minimal output)
-    -v, --verbose      Verbose mode (detailed output)
-    --min-size SIZE    Minimum device size in GB (default: $MIN_SIZE_GB)
-    --max-size SIZE    Maximum device size in GB (default: $MAX_SIZE_GB)
-    --include-boot     Include boot device in detection
-    --json             Output in JSON format
-
-EXAMPLES:
-    $0                          # Detect suitable devices
-    $0 select                   # Interactive device selection
-    $0 export devices.txt       # Export to file
-    $0 --min-size 4 detect      # Only devices >= 4GB
-    $0 --include-boot detect    # Include boot device
-
-SAFETY:
-    This script automatically excludes:
-    - Devices smaller than ${MIN_SIZE_GB}GB
-    - Devices larger than ${MAX_SIZE_GB}GB
-    - Boot device (containing / or /boot)
-    - Virtual devices (loop, ram)
-
-EOF
+    print_msg "$WHITE" "USAGE:"
+    print_msg "$CYAN" "    $0 [OPTIONS] [COMMAND]"
+    echo ""
+    
+    print_msg "$WHITE" "COMMANDS:"
+    print_msg "$GREEN" "    detect          ${WHITE}Detect and list all suitable devices (default)"
+    print_msg "$GREEN" "    select          ${WHITE}Interactive device selection"
+    print_msg "$GREEN" "    export [FILE]   ${WHITE}Export device information to file"
+    print_msg "$GREEN" "    list-all        ${WHITE}Show all block devices (including unsuitable)"
+    echo ""
+    
+    print_msg "$WHITE" "OPTIONS:"
+    print_msg "$GREEN" "    -h, --help         ${WHITE}Show this help message"
+    print_msg "$GREEN" "    -q, --quiet        ${WHITE}Quiet mode (minimal output)"
+    print_msg "$GREEN" "    -v, --verbose      ${WHITE}Verbose mode (detailed output)"
+    print_msg "$GREEN" "    --min-size SIZE    ${WHITE}Minimum device size in GB (default: $MIN_SIZE_GB)"
+    print_msg "$GREEN" "    --max-size SIZE    ${WHITE}Maximum device size in GB (default: $MAX_SIZE_GB)"
+    print_msg "$GREEN" "    --include-boot     ${WHITE}Include boot device in detection"
+    print_msg "$GREEN" "    --json             ${WHITE}Output in JSON format (planned)"
+    echo ""
+    
+    print_msg "$WHITE" "EXAMPLES:"
+    print_msg "$YELLOW" "    $0                          ${DIM}# Detect suitable devices"
+    print_msg "$YELLOW" "    $0 select                   ${DIM}# Interactive device selection"
+    print_msg "$YELLOW" "    $0 export devices.txt       ${DIM}# Export to file"
+    print_msg "$YELLOW" "    $0 --min-size 4 detect      ${DIM}# Only devices >= 4GB"
+    print_msg "$YELLOW" "    $0 --include-boot detect    ${DIM}# Include boot device"
+    echo ""
+    
+    print_msg "$WHITE" "DETECTION CRITERIA:"
+    print_bullet 0 "Size range: ${MIN_SIZE_GB}GB - ${MAX_SIZE_GB}GB"
+    print_bullet 0 "Device types: USB, SD, SATA, NVMe"
+    print_bullet 0 "Excludes boot device (containing / or /boot)"
+    print_bullet 0 "Excludes virtual devices (loop, ram)"
+    echo ""
+    
+    print_box "DEVICE INFORMATION PROVIDED" \
+        "• Device type and connection (USB/SD/SATA/NVMe)
+• Manufacturer and model information
+• Storage capacity (human readable + exact)
+• Current filesystem and label
+• Mount status and mount points
+• Partition count and details
+• Safety warnings for mounted/partitioned devices"
+    
+    print_msg "$WHITE" "OUTPUT MODES:"
+    print_bullet 0 "Standard: Colored, formatted output with details"
+    print_bullet 0 "Quiet: Minimal output, suitable for scripting"
+    print_bullet 0 "Verbose: Extended information and debug output"
+    print_bullet 0 "Export: Machine-readable text format"
+    echo ""
+    
+    print_msg "$CYAN" "For more information, visit: https://github.com/Tabes/OpenWRT"
 }
 
 ################################################################################
