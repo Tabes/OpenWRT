@@ -3,12 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.1
+### Version: 1.0.2
 ### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 
 set -e
 
@@ -161,8 +161,55 @@ is_newer_version() {
     return 1
 }
 
-### Check for updated version in project ###
+### Check if target directory exists and is valid ###
+check_target_directory() {
+    ### If directory doesn't exist, this is first installation ###
+    if [ ! -d "$TARGET_DIR" ]; then
+        print_info "Target directory does not exist - this will be a fresh installation"
+        return 1  # No updates possible
+    fi
+    
+    ### Check if it looks like a valid OpenWRT installation ###
+    if [ ! -d "$TARGET_DIR/.git" ]; then
+        print_warning "Target directory exists but is not a git repository"
+        if [ "$FORCE_MODE" != "true" ]; then
+            if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
+                error_exit "Installation cancelled"
+            fi
+        fi
+        return 1  # Not a valid installation, no updates
+    fi
+    
+    ### Check if it's our OpenWRT project ###
+    if [ -d "$TARGET_DIR/.git" ]; then
+        cd "$TARGET_DIR"
+        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        if [[ "$remote_url" != *"OpenWRT"* ]]; then
+            print_warning "Target directory contains a different git repository"
+            print_info "Found: $remote_url"
+            print_info "Expected: $PROJECT_URL"
+            if [ "$FORCE_MODE" != "true" ]; then
+                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
+                    error_exit "Installation cancelled"
+                fi
+            fi
+            return 1  # Different project, no updates
+        fi
+    fi
+    
+    print_success "Valid OpenWRT installation found"
+    return 0  # Valid installation, updates possible
+}
+
+### Enhanced update check ###
 check_for_updates() {
+    ### First check if target directory is valid ###
+    if ! check_target_directory; then
+        print_info "No valid installation found - proceeding with fresh installation"
+        return 0
+    fi
+    
+    ### Now check for script updates ###
     local project_script="$TARGET_DIR/gitclone.sh"
     local current_script="$0"
     
