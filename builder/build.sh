@@ -4,443 +4,630 @@
 ### BPI-R4 Debian/OpenWRT Hybrid Image Builder
 ################################################################################
 ### Project: OpenWRT Custom Builder
-### Version: 1.0.0
+### Version: 1.0.2
 ### Author:  Mawage (OpenWRT Builder Team)
 ### Date:    2025-08-19
 ### License: MIT
 ################################################################################
 
-set -e
+SCRIPT_VERSION="1.0.2"
 
 ################################################################################
-### INITIALIZATION
+### SAFETY: Ensure we're in a safe directory before anything else
 ################################################################################
 
-### Script directory and paths ###
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-### Load builder configuration first ###
-BUILDER_CONFIG="$SCRIPT_DIR/config/builder.cfg"
-if [ -f "$BUILDER_CONFIG" ]; then
-    source "$BUILDER_CONFIG"
-fi
-
-### Load global configuration ###
-GLOBAL_CONFIG="$PROJECT_ROOT/config/global.cfg"
-if [ -f "$GLOBAL_CONFIG" ]; then
-    source "$GLOBAL_CONFIG"
-fi
-
-### Load helper functions ###
-if [ -f "$SCRIPT_DIR/helper.sh" ]; then
-    source "$SCRIPT_DIR/helper.sh"
-else
-    echo "ERROR: Helper functions not found at $SCRIPT_DIR/helper.sh"
+### If we're being executed, immediately restart from root directory ###
+if [ "${PWD}" != "/" ] && [ "${GITCLONE_RESTARTED:-}" != "true" ]; then
+    export GITCLONE_RESTARTED="true"
+    cd / && exec "$0" "$@"
+    # If we get here, something went wrong
+    echo "ERROR: Cannot change to safe directory"
     exit 1
 fi
 
-################################################################################
-### DEFAULT CONFIGURATION
-################################################################################
-
-### Build Configuration ###
-BUILD_TYPE="${BUILD_TYPE:-debian-luci}"
-TARGET_DEVICE="${TARGET_DEVICE:-bpi-r4}"
-IMAGE_SIZE="${IMAGE_SIZE:-8G}"
-OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
-WORK_DIR="${WORK_DIR:-$SCRIPT_DIR/work}"
-LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/log}"
-CACHE_DIR="${CACHE_DIR:-$SCRIPT_DIR/cache}"
-
-### System Configuration ###
-DEBIAN_VERSION="${DEBIAN_VERSION:-bookworm}"
-KERNEL_VERSION="${KERNEL_VERSION:-6.6}"
-HOSTNAME="${HOSTNAME:-bpi-r4}"
-ROOT_PASSWORD="${ROOT_PASSWORD:-bananapi}"
-LAN_IP="${LAN_IP:-192.168.1.1}"
-LAN_NETMASK="${LAN_NETMASK:-255.255.255.0}"
-
-### Build Options ###
-ENABLE_LUCI="${ENABLE_LUCI:-true}"
-ENABLE_DOCKER="${ENABLE_DOCKER:-false}"
-ENABLE_WIFI="${ENABLE_WIFI:-true}"
-COMPRESS_IMAGE="${COMPRESS_IMAGE:-true}"
-PARALLEL_JOBS="${PARALLEL_JOBS:-$(nproc)}"
-
-### Initialize with logging ###
-LOG_FILE="$LOG_DIR/build_$(get_timestamp).log"
-init_helpers "build.sh" "$LOG_FILE"
+set -e
 
 ################################################################################
-### BUILD FUNCTIONS
+### CONFIGURATION
 ################################################################################
 
-### Setup directories ###
-setup_directories() {
-    print_step "1" "Setting up directory structure"
+### Project settings ###
+PROJECT_URL="https://github.com/Tabes/OpenWRT.git"
+TARGET_DIR="/opt/openWRT"
+PROJECT_BRANCH="${PROJECT_BRANCH:-main}"
+
+### Colors for output ###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m'
+
+### Symbols ###
+SUCCESS="✅"
+ERROR="❌"
+WARNING="⚠️"
+INFO="ℹ️"
+ARROW="➤"
+
+################################################################################
+### HELPER FUNCTIONS
+################################################################################
+
+### Print colored message ###
+print_msg() {
+    local color=$1
+    shift
+    echo -e "${color}$*${NC}"
+}
+
+### Print header ###
+print_header() {
+    echo ""
+    print_msg "$BLUE" "################################################################################"
+    print_msg "$BLUE" "### $1"
+    print_msg "$BLUE" "################################################################################"
+    echo ""
+}
+
+### Print step ###
+print_step() {
+    local step=$1
+    shift
+    print_msg "$CYAN" "${ARROW} Step $step: $*"
+}
+
+### Print success ###
+print_success() {
+    print_msg "$GREEN" "$SUCCESS $*"
+}
+
+### Print error ###
+print_error() {
+    print_msg "$RED" "$ERROR $*" >&2
+}
+
+### Print warning ###
+print_warning() {
+    print_msg "$YELLOW" "$WARNING $*"
+}
+
+### Print info ###
+print_info() {
+    print_msg "$WHITE" "$INFO $*"
+}
+
+### Error exit ###
+error_exit() {
+    print_error "$1"
+    exit 1
+}
+
+### Check if running as root ###
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error_exit "This script must be run as root or with sudo"
+    fi
+}
+
+### Check if command exists ###
+check_command() {
+    local cmd="$1"
+    local package="$2"
     
-    local dirs=(
-        "$OUTPUT_DIR"
-        "$WORK_DIR"
-        "$LOG_DIR"
-        "$CACHE_DIR"
-        "$SCRIPT_DIR/scripts"
-        "$SCRIPT_DIR/boot"
-        "$SCRIPT_DIR/config"
-    )
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        print_warning "Command '$cmd' not found"
+        if [ -n "$package" ]; then
+            print_info "Installing $package..."
+            apt update >/dev/null 2>&1
+            apt install -y "$package" >/dev/null 2>&1
+            print_success "Installed $package"
+        else
+            error_exit "Required command '$cmd' not available"
+        fi
+    fi
+}
+
+################################################################################
+### SELF-UPDATE MECHANISM
+################################################################################
+
+### Extract version from script ###
+get_script_version() {
+    local script_file="$1"
+    grep "^SCRIPT_VERSION=" "$script_file" 2>/dev/null | cut -d'"' -f2 || echo ""
+}
+
+### Combined version check ###
+is_newer_version() {
+    local current_script="$0"
+    local project_script="$TARGET_DIR/gitclone.sh"
     
-    for dir in "${dirs[@]}"; do
-        validate_directory "$dir" true
-        print_check "Created: $dir"
+    if [ ! -f "$project_script" ]; then
+        return 1
+    fi
+    
+    ### First check: File timestamp ###
+    local current_time=$(stat -c %Y "$current_script" 2>/dev/null || echo 0)
+    local project_time=$(stat -c %Y "$project_script" 2>/dev/null || echo 0)
+    
+    ### Second check: Version number (if available) ###
+    local current_version=$(get_script_version "$current_script")
+    local project_version=$(get_script_version "$project_script")
+    
+    ### Check version number first (more reliable) ###
+    if [ -n "$current_version" ] && [ -n "$project_version" ]; then
+        if [ "$project_version" != "$current_version" ]; then
+            print_info "Version update available:"
+            print_info "  Current: v$current_version"
+            print_info "  Project: v$project_version"
+            return 0
+        fi
+    ### Fallback to timestamp if no version numbers ###
+    elif [ "$project_time" -gt "$current_time" ]; then
+        print_info "Newer file found (timestamp based):"
+        print_info "  Current: $(date -d @$current_time '+%Y-%m-%d %H:%M:%S')"
+        print_info "  Project: $(date -d @$project_time '+%Y-%m-%d %H:%M:%S')"
+        return 0
+    fi
+    
+    return 1
+}
+
+### Check if target directory exists and is valid for updates ###
+check_target_directory() {
+    ### If directory doesn't exist, prepare for first installation ###
+    if [ ! -d "$TARGET_DIR" ]; then
+        print_info "Target directory does not exist - preparing for fresh installation"
+        
+        ### Create parent directory and set permissions ###
+        mkdir -p "$(dirname "$TARGET_DIR")" || {
+            error_exit "Cannot create parent directory: $(dirname "$TARGET_DIR")"
+        }
+        
+        ### Ensure proper ownership of parent directory ###
+        chown root:root "$(dirname "$TARGET_DIR")" 2>/dev/null || true
+        
+        print_success "Prepared for fresh installation"
+        return 1  # No existing installation, but ready for new one
+    fi
+    
+    ### Check if it looks like a valid OpenWRT installation ###
+    if [ ! -d "$TARGET_DIR/.git" ]; then
+        print_warning "Target directory exists but is not a git repository"
+        return 2  # Invalid installation
+    fi
+    
+    ### Check if it's our OpenWRT project ###
+    if [ -d "$TARGET_DIR/.git" ]; then
+        cd "$TARGET_DIR"
+        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        if [[ "$remote_url" != *"OpenWRT"* ]]; then
+            print_warning "Target directory contains a different git repository"
+            print_info "Found: $remote_url"
+            print_info "Expected: $PROJECT_URL"
+            return 3  # Wrong repository
+        fi
+    fi
+    
+    print_success "Valid OpenWRT installation found"
+    return 0  # Valid installation, updates possible
+}
+
+### Enhanced update check ###
+check_for_updates() {
+    ### Check what we have ###
+    check_target_directory
+    local install_status=$?
+    
+    case $install_status in
+        0)  # Valid installation - check for updates
+            print_info "Checking for script updates..."
+            local project_script="$TARGET_DIR/gitclone.sh"
+            local current_script="$0"
+            
+            ### Skip if we ARE the project version ###
+            if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
+                return 0
+            fi
+            
+            ### Check if project version is newer ###
+            if is_newer_version; then
+                if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
+                    echo ""
+                    if ask_yes_no "Use updated version from project?" "yes"; then
+                        exec_updated_version "$project_script"
+                    else
+                        print_warning "Continuing with current version"
+                    fi
+                elif [ "$FORCE_MODE" = "true" ]; then
+                    exec_updated_version "$project_script"
+                fi
+            fi
+            ;;
+        1)  # No installation - ready for fresh install
+            print_info "Ready for fresh installation"
+            ;;
+        2)  # Invalid installation
+            if [ "$FORCE_MODE" != "true" ]; then
+                if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
+                    error_exit "Installation cancelled"
+                fi
+            fi
+            ;;
+        3)  # Wrong repository
+            if [ "$FORCE_MODE" != "true" ]; then
+                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
+                    error_exit "Installation cancelled"
+                fi
+            fi
+            ;;
+    esac
+}
+
+### Execute updated version ###
+exec_updated_version() {
+    local updated_script="$1"
+    
+    print_info "Switching to updated version..."
+    print_info "Executing: $updated_script"
+    
+    ### Make sure it's executable ###
+    chmod +x "$updated_script"
+    
+    ### Execute with all original arguments ###
+    exec "$updated_script" "$@"
+}
+
+### Ask yes/no question ###
+ask_yes_no() {
+    local question="$1"
+    local default="$2"
+    
+    local prompt="$question"
+    case "$default" in
+        yes|y) prompt="$prompt [Y/n]" ;;
+        no|n)  prompt="$prompt [y/N]" ;;
+        *)     prompt="$prompt [y/n]" ;;
+    esac
+    
+    while true; do
+        read -p "$prompt: " answer
+        answer="${answer:-$default}"
+        
+        case "$answer" in
+            yes|y|Y|YES) return 0 ;;
+            no|n|N|NO)   return 1 ;;
+            *) print_warning "Please answer yes or no" ;;
+        esac
     done
 }
 
-### Check system requirements ###
-check_requirements() {
-    print_step "2" "Checking system requirements"
+################################################################################
+### MAIN FUNCTIONS
+################################################################################
+
+### Remove existing installation ###
+remove_existing() {
+    if [ -d "$TARGET_DIR" ]; then
+        print_warning "Existing installation found at $TARGET_DIR"
+        print_info "Removing existing installation..."
+        
+        ### Stop any running processes that might use the directory ###
+        if command -v fuser >/dev/null 2>&1; then
+            fuser -k "$TARGET_DIR" 2>/dev/null || true
+        fi
+        
+        ### Unmount any loop devices ###
+        for loop in $(losetup -a 2>/dev/null | grep "$TARGET_DIR" | cut -d: -f1); do
+            print_info "Detaching loop device: $loop"
+            losetup -d "$loop" 2>/dev/null || true
+        done
+        
+        ### Remove directory ###
+        rm -rf "$TARGET_DIR"
+        print_success "Removed existing installation"
+    fi
+}
+
+### Enhanced clone repository with cleanup on failure ###
+clone_repository() {
+    print_info "Cloning repository from: $PROJECT_URL"
+    print_info "Target directory: $TARGET_DIR"
+    print_info "Branch: $PROJECT_BRANCH"
     
-    local required_commands=(
-        "debootstrap:debootstrap"
-        "parted:parted"
-        "mkfs.ext4:e2fsprogs"
-        "mkfs.vfat:dosfstools"
-        "rsync:rsync"
-        "wget:wget"
-        "git:git"
-        "xz:xz-utils"
+    ### Create parent directory ###
+    mkdir -p "$(dirname "$TARGET_DIR")"
+    
+    ### Clone with progress and error handling ###
+    if git clone --progress --branch "$PROJECT_BRANCH" "$PROJECT_URL" "$TARGET_DIR"; then
+        print_success "Repository cloned successfully"
+    else
+        print_error "Failed to clone repository"
+        
+        ### Cleanup failed clone attempt ###
+        if [ -d "$TARGET_DIR" ]; then
+            print_info "Cleaning up failed installation..."
+            rm -rf "$TARGET_DIR"
+            print_success "Cleaned up incomplete installation"
+        fi
+        
+        error_exit "Git clone failed - installation aborted"
+    fi
+}
+
+### Set permissions ###
+set_permissions() {
+    print_info "Setting file permissions..."
+    
+    ### Set ownership ###
+    chown -R root:root "$TARGET_DIR"
+    print_success "Set ownership to root:root"
+    
+    ### Set directory permissions ###
+    find "$TARGET_DIR" -type d -exec chmod 755 {} \;
+    print_success "Set directory permissions (755)"
+    
+    ### Set file permissions ###
+    find "$TARGET_DIR" -type f -exec chmod 644 {} \;
+    print_success "Set file permissions (644)"
+    
+    ### Make scripts executable ###
+    local script_dirs=(
+        "$TARGET_DIR/builder"
+        "$TARGET_DIR/builder/scripts"
+        "$TARGET_DIR/builder/boot"
     )
     
-    local missing_packages=()
-    
-    for item in "${required_commands[@]}"; do
-        local cmd="${item%:*}"
-        local package="${item#*:}"
-        
-        if command -v "$cmd" >/dev/null 2>&1; then
-            print_check "Found: $cmd"
-        else
-            print_cross "Missing: $cmd"
-            missing_packages+=("$package")
+    for dir in "${script_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            find "$dir" -name "*.sh" -exec chmod +x {} \;
+            print_success "Made scripts executable in: $(basename "$dir")"
         fi
     done
     
-    if [ ${#missing_packages[@]} -gt 0 ]; then
-        print_warning "Installing missing dependencies..."
-        apt-get update >> "$LOG_FILE" 2>&1
-        apt-get install -y "${missing_packages[@]}" >> "$LOG_FILE" 2>&1 || \
-            error_exit "Failed to install dependencies"
-        print_success "Dependencies installed successfully"
+    ### Make main build script executable ###
+    if [ -f "$TARGET_DIR/builder/build.sh" ]; then
+        chmod +x "$TARGET_DIR/builder/build.sh"
+        print_success "Made build.sh executable"
     fi
 }
 
-### Display build configuration ###
-show_config() {
-    print_header "BUILD CONFIGURATION"
+### Create symlinks ###
+create_symlinks() {
+    print_info "Creating configuration symlinks..."
     
-    print_box "Build Settings" \
-        "Build Type:      $BUILD_TYPE
-Target Device:   $TARGET_DEVICE
-Image Size:      $IMAGE_SIZE
-Output Dir:      $OUTPUT_DIR"
+    ### Global config symlink ###
+    local global_config="$TARGET_DIR/builder/config/global.cfg"
+    local target_config="$TARGET_DIR/config/global.cfg"
     
-    print_box "System Settings" \
-        "Debian Version:  $DEBIAN_VERSION
-Kernel Version:  $KERNEL_VERSION
-Hostname:        $HOSTNAME
-LAN IP:          $LAN_IP"
-    
-    print_box "Build Options" \
-        "Enable LuCI:     $ENABLE_LUCI
-Enable Docker:   $ENABLE_DOCKER
-Enable WiFi:     $ENABLE_WIFI
-Compress Image:  $COMPRESS_IMAGE
-Parallel Jobs:   $PARALLEL_JOBS"
+    if [ -f "$target_config" ]; then
+        ### Remove existing symlink if present ###
+        if [ -L "$global_config" ]; then
+            rm -f "$global_config"
+        fi
+        
+        ### Create new symlink ###
+        cd "$TARGET_DIR/builder/config"
+        ln -sf "../../config/global.cfg" "global.cfg"
+        print_success "Created global.cfg symlink"
+    else
+        print_warning "Global config not found, skipping symlink creation"
+    fi
 }
 
-### Ask for confirmation ###
-confirm_build() {
-    print_warning "This will create a new system image."
+### Validate installation ###
+validate_installation() {
+    print_info "Validating installation..."
+    
+    ### Check required directories ###
+    local required_dirs=(
+        "$TARGET_DIR/builder"
+        "$TARGET_DIR/builder/scripts"
+        "$TARGET_DIR/builder/config"
+        "$TARGET_DIR/config"
+    )
+    
+    for dir in "${required_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            print_success "Found: $(basename "$dir")"
+        else
+            print_error "Missing: $dir"
+            return 1
+        fi
+    done
+    
+    ### Check key scripts ###
+    local key_scripts=(
+        "$TARGET_DIR/builder/build.sh"
+        "$TARGET_DIR/builder/scripts/helper.sh"
+        "$TARGET_DIR/builder/scripts/detect-media.sh"
+        "$TARGET_DIR/builder/scripts/write-media.sh"
+        "$TARGET_DIR/builder/scripts/debian-luci.sh"
+    )
+    
+    for script in "${key_scripts[@]}"; do
+        if [ -f "$script" ] && [ -x "$script" ]; then
+            print_success "Executable: $(basename "$script")"
+        elif [ -f "$script" ]; then
+            print_warning "Not executable: $(basename "$script")"
+        else
+            print_error "Missing: $(basename "$script")"
+            return 1
+        fi
+    done
+    
+    print_success "Installation validation passed"
+}
+
+### Show installation summary ###
+show_summary() {
+    print_header "INSTALLATION SUMMARY"
+    
+    ### Project information ###
+    print_info "Project Details:"
+    echo "  • Repository: $PROJECT_URL"
+    echo "  • Branch:     $PROJECT_BRANCH"
+    echo "  • Location:   $TARGET_DIR"
     echo ""
     
-    if ! ask_yes_no "Do you want to continue?" "no"; then
-        print_info "Build cancelled by user."
-        exit 0
-    fi
-}
-
-### Execute build script based on type ###
-execute_build() {
-    print_header "EXECUTING BUILD"
-    
-    local build_script=""
-    
-    case "$BUILD_TYPE" in
-        "debian-luci")
-            build_script="$SCRIPT_DIR/scripts/debian-luci.sh"
-            ;;
-        "openwrt")
-            build_script="$SCRIPT_DIR/scripts/openwrt.sh"
-            ;;
-        "debian-minimal")
-            build_script="$SCRIPT_DIR/scripts/debian-minimal.sh"
-            ;;
-        *)
-            error_exit "Unknown build type: $BUILD_TYPE"
-            ;;
-    esac
-    
-    validate_file "$build_script"
-    
-    print_info "Executing: $build_script"
-    
-    ### Export variables for build script ###
-    export OUTPUT_DIR WORK_DIR LOG_DIR CACHE_DIR
-    export DEBIAN_VERSION KERNEL_VERSION HOSTNAME ROOT_PASSWORD
-    export LAN_IP LAN_NETMASK IMAGE_SIZE
-    export ENABLE_LUCI ENABLE_DOCKER ENABLE_WIFI
-    export COMPRESS_IMAGE PARALLEL_JOBS
-    export TARGET_DEVICE
-    
-    ### Execute build script ###
-    local start_time=$SECONDS
-    
-    if bash "$build_script"; then
-        local duration=$((SECONDS - start_time))
-        print_success "Build completed successfully in $(format_duration $duration)!"
-        return 0
-    else
-        error_exit "Build failed! Check log: $LOG_FILE"
-    fi
-}
-
-### Post-build actions ###
-post_build() {
-    print_header "POST-BUILD ACTIONS"
-    
-    ### List created images ###
-    print_subheader "Created Images"
-    if ls "$OUTPUT_DIR"/*.img* >/dev/null 2>&1; then
-        ls -lh "$OUTPUT_DIR"/*.img*
-        print_success "Images created successfully"
-    else
-        print_warning "No images found in output directory"
-    fi
-    
-    ### Check for SD card writer script ###
-    if [ -f "$SCRIPT_DIR/scripts/write-media.sh" ]; then
-        print_info "To write the image to SD card, run:"
-        print_bullet 0 "sudo $SCRIPT_DIR/scripts/write-media.sh"
-    fi
-    
-    ### Generate summary ###
-    generate_summary
-}
-
-### Generate build summary ###
-generate_summary() {
-    local summary_file="$OUTPUT_DIR/build_summary_$(get_timestamp).txt"
-    
-    {
-        echo "################################################################################"
-        echo "### BUILD SUMMARY"
-        echo "################################################################################"
-        echo "Date:           $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "Build Type:     $BUILD_TYPE"
-        echo "Target Device:  $TARGET_DEVICE"
-        echo "Image Size:     $IMAGE_SIZE"
-        echo "Debian Version: $DEBIAN_VERSION"
-        echo "Kernel Version: $KERNEL_VERSION"
-        echo "Hostname:       $HOSTNAME"
-        echo "LAN IP:         $LAN_IP"
+    ### Git information ###
+    if [ -d "$TARGET_DIR/.git" ]; then
+        cd "$TARGET_DIR"
+        local commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        local commit_date=$(git log -1 --format="%cd" --date=short 2>/dev/null || echo "unknown")
+        local commit_msg=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
+        
+        print_info "Git Information:"
+        echo "  • Commit:     $commit_hash"
+        echo "  • Date:       $commit_date"
+        echo "  • Message:    $commit_msg"
         echo ""
-        echo "Output Files:"
-        ls -lh "$OUTPUT_DIR"/*.img* 2>/dev/null || echo "  No images found"
-        echo ""
-        echo "Next Steps:"
-        echo "  1. Check output in: $OUTPUT_DIR"
-        echo "  2. Write to SD card: sudo $SCRIPT_DIR/scripts/write-media.sh"
-        echo "  3. Boot your $TARGET_DEVICE"
-        echo "################################################################################"
-    } > "$summary_file"
+    fi
     
-    print_success "Build summary saved to: $summary_file"
-}
-
-### Cleanup function ###
-cleanup() {
-    print_info "Cleaning up..."
+    ### Directory structure ###
+    print_info "Directory Structure:"
+    if command -v tree >/dev/null 2>&1; then
+        tree -L 2 "$TARGET_DIR" 2>/dev/null || ls -la "$TARGET_DIR"
+    else
+        ls -la "$TARGET_DIR"
+    fi
+    echo ""
     
-    ### Unmount any mounted filesystems ###
-    for mount in $(mount | grep "$WORK_DIR" | awk '{print $3}' | sort -r); do
-        safe_unmount "$mount"
-    done
+    ### Usage instructions ###
+    print_info "Next Steps:"
+    echo "  1. Test device detection:"
+    echo "     sudo $TARGET_DIR/builder/scripts/detect-media.sh"
+    echo ""
+    echo "  2. Start a build:"
+    echo "     sudo $TARGET_DIR/builder/build.sh"
+    echo ""
+    echo "  3. Get help:"
+    echo "     sudo $TARGET_DIR/builder/build.sh --help"
+    echo ""
     
-    ### Remove loop devices ###
-    cleanup_loop_devices "$WORK_DIR"
-    
-    print_success "Cleanup completed"
-}
-
-################################################################################
-### COMMAND LINE INTERFACE
-################################################################################
-
-### Show usage information ###
-show_usage() {
-    cat << EOF
-################################################################################
-### OpenWRT Custom Builder v1.0.0
-################################################################################
-
-USAGE:
-    $0 [OPTIONS]
-
-OPTIONS:
-    -h, --help              Show this help message
-    -t, --type TYPE         Build type (debian-luci, openwrt, debian-minimal)
-    -d, --device DEVICE     Target device (bpi-r4)
-    -s, --size SIZE         Image size (default: 8G)
-    -o, --output DIR        Output directory
-    -j, --jobs N            Parallel jobs (default: $(nproc))
-    -q, --quiet             Quiet mode
-    -v, --verbose           Verbose mode
-    --no-compress           Don't compress final image
-    --enable-docker         Enable Docker support
-    --disable-luci          Disable LuCI web interface
-    --hostname NAME         Set hostname (default: bpi-r4)
-    --lan-ip IP             Set LAN IP (default: 192.168.1.1)
-
-EXAMPLES:
-    $0                                      # Default build
-    $0 -t debian-luci -d bpi-r4            # Debian with LuCI
-    $0 --type openwrt --enable-docker      # OpenWrt with Docker
-    $0 -q -j 8 --no-compress              # Quiet, 8 jobs, no compression
-
-AVAILABLE BUILD TYPES:
-    debian-luci       Debian 12 with OpenWrt LuCI interface
-    debian-minimal    Minimal Debian 12 system
-    openwrt           Pure OpenWrt system
-
-EOF
-}
-
-### Parse command line arguments ###
-parse_arguments() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -h|--help)
-                show_usage
-                exit 0
-                ;;
-            -t|--type)
-                BUILD_TYPE="$2"
-                shift 2
-                ;;
-            -d|--device)
-                TARGET_DEVICE="$2"
-                shift 2
-                ;;
-            -s|--size)
-                IMAGE_SIZE="$2"
-                shift 2
-                ;;
-            -o|--output)
-                OUTPUT_DIR="$2"
-                shift 2
-                ;;
-            -j|--jobs)
-                PARALLEL_JOBS="$2"
-                shift 2
-                ;;
-            -q|--quiet)
-                DEFAULT_QUIET_MODE=true
-                shift
-                ;;
-            -v|--verbose)
-                DEFAULT_VERBOSE_MODE=true
-                shift
-                ;;
-            --no-compress)
-                COMPRESS_IMAGE=false
-                shift
-                ;;
-            --enable-docker)
-                ENABLE_DOCKER=true
-                shift
-                ;;
-            --disable-luci)
-                ENABLE_LUCI=false
-                shift
-                ;;
-            --hostname)
-                HOSTNAME="$2"
-                shift 2
-                ;;
-            --lan-ip)
-                LAN_IP="$2"
-                shift 2
-                ;;
-            *)
-                print_error "Unknown option: $1"
-                show_usage
-                exit 1
-                ;;
-        esac
-    done
+    print_success "OpenWRT Builder is ready to use!"
 }
 
 ################################################################################
 ### MAIN EXECUTION
 ################################################################################
 
+### Show usage ###
+show_usage() {
+    print_header "OpenWRT Builder - Git Clone Setup"
+    
+    echo "USAGE:"
+    echo "    sudo $0 [OPTIONS]"
+    echo ""
+    echo "OPTIONS:"
+    echo "    -h, --help      Show this help message"
+    echo "    -b, --branch    Specify git branch (default: main)"
+    echo "    -f, --force     Force overwrite without confirmation"
+    echo "    -q, --quiet     Quiet mode (minimal output)"
+    echo ""
+    echo "EXAMPLES:"
+    echo "    sudo $0                   # Standard installation"
+    echo "    sudo $0 -b develop        # Install develop branch"
+    echo "    sudo $0 -f                # Force overwrite"
+    echo ""
+    echo "DESCRIPTION:"
+    echo "    This script will:"
+    echo "    • Remove any existing installation"
+    echo "    • Clone the OpenWRT project from GitHub"
+    echo "    • Set proper file permissions"
+    echo "    • Create configuration symlinks"
+    echo "    • Validate the installation"
+    echo ""
+}
+
+### Parse command line arguments ###
+FORCE_MODE=false
+QUIET_MODE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        -b|--branch)
+            PROJECT_BRANCH="$2"
+            shift 2
+            ;;
+        -f|--force)
+            FORCE_MODE=true
+            shift
+            ;;
+        -q|--quiet)
+            QUIET_MODE=true
+            shift
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
 ### Main function ###
 main() {
-    ### Parse arguments ###
-    parse_arguments "$@"
-    
     ### Show header ###
-    print_header "OpenWRT CUSTOM BUILDER v1.0.0"
+    if [ "$QUIET_MODE" != "true" ]; then
+        print_header "OpenWRT Builder - Git Clone Setup v$SCRIPT_VERSION"
+    fi
     
-    ### Check if running as root ###
+    ### Check for updates BEFORE doing anything else ###
+    check_for_updates
+    
+    ### Check prerequisites ###
     check_root
+    check_command "git" "git"
     
-    ### Setup directories ###
-    setup_directories
+    ### Show what will be done ###
+    if [ "$QUIET_MODE" != "true" ]; then
+        print_info "This script will:"
+        echo "  • Remove existing installation (if any)"
+        echo "  • Clone OpenWRT project from GitHub"
+        echo "  • Set proper permissions"
+        echo "  • Create configuration links"
+        echo "  • Validate installation"
+        echo ""
+        
+        if [ "$FORCE_MODE" != "true" ]; then
+            read -p "Continue? (y/N): " -r
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                print_info "Installation cancelled"
+                exit 0
+            fi
+        fi
+    fi
     
-    ### Check system requirements ###
-    check_requirements
+    ### Execute installation steps ###
+    print_step "1" "Removing existing installation"
+    remove_existing
     
-    ### Check disk space ###
-    check_disk_space "$WORK_DIR" 20
+    print_step "2" "Cloning repository"
+    clone_repository
     
-    ### Show configuration ###
-    show_config
+    print_step "3" "Setting permissions"
+    set_permissions
     
-    ### Ask for confirmation ###
-    confirm_build
+    print_step "4" "Creating symlinks"
+    create_symlinks
     
-    ### Execute build ###
-    local total_start_time=$SECONDS
-    execute_build
+    print_step "5" "Validating installation"
+    validate_installation
     
-    ### Post-build actions ###
-    post_build
-    
-    ### Final success message ###
-    local total_duration=$((SECONDS - total_start_time))
-    
-    print_header "BUILD COMPLETED SUCCESSFULLY"
-    
-    print_success "Total build time: $(format_duration $total_duration)"
-    print_success "Log file: $LOG_FILE"
-    echo ""
-    print_info "Next steps:"
-    print_bullet 0 "Check output in: $OUTPUT_DIR"
-    print_bullet 0 "Write to SD card: sudo $SCRIPT_DIR/scripts/write-media.sh"
-    print_bullet 0 "Boot your $TARGET_DEVICE"
-    
-    exit 0
+    ### Show summary ###
+    if [ "$QUIET_MODE" != "true" ]; then
+        show_summary
+    else
+        print_success "OpenWRT Builder installed successfully at $TARGET_DIR"
+    fi
 }
 
 ### Run main function ###
