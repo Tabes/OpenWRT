@@ -293,6 +293,7 @@ check_for_updates() {
 exec_updated_version() {
     local updated_script="$1"
     local current_script="$0"
+    shift  # Remove first parameter (updated_script path)
     
     print_info "Switching to updated version..."
     print_info "Executing: $updated_script"
@@ -310,7 +311,7 @@ exec_updated_version() {
     ### Make sure it's executable ###
     chmod +x "$updated_script"
     
-    ### Execute with all original arguments ###
+    ### Execute with remaining original arguments (without the script path) ###
     exec "$updated_script" "$@"
 }
 
