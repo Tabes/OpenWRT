@@ -4,19 +4,26 @@
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
 ### Version: 1.0.2
-### Date:    2025-08-19
+### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
 SCRIPT_VERSION="1.0.2"
 
-set -e
+################################################################################
+### SAFETY: Ensure we're in a safe directory before anything else
+################################################################################
 
-### Change to root directory to avoid issues if current directory gets deleted ###
-cd / || {
-    echo "ERROR: Cannot change to root directory"
+### If we're being executed, immediately restart from root directory ###
+if [ "${PWD}" != "/" ] && [ "${GITCLONE_RESTARTED:-}" != "true" ]; then
+    export GITCLONE_RESTARTED="true"
+    cd / && exec "$0" "$@"
+    # If we get here, something went wrong
+    echo "ERROR: Cannot change to safe directory"
     exit 1
-}
+fi
+
+set -e
 
 ################################################################################
 ### CONFIGURATION
