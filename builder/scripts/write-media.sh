@@ -630,42 +630,67 @@ write_image_main() {
 
 ### Show usage information ###
 show_usage() {
-    cat << EOF
-################################################################################
-### OpenWRT Builder - Image Writer
-################################################################################
-
-USAGE:
-    $0 [OPTIONS] [IMAGE] [DEVICE]
-
-ARGUMENTS:
-    IMAGE           Path to image file (will prompt if not specified)
-    DEVICE          Target device (will prompt if not specified)
-
-OPTIONS:
-    -h, --help           Show this help message
-    -f, --force          Force mode (skip confirmations)
-    -q, --quiet          Quiet mode (minimal output)
-    -v, --verbose        Verbose mode (detailed output)
-    -d, --dir DIR        Directory to search for images
-    --no-verify          Skip image verification after writing
-    --allow-mounted      Allow writing to mounted devices
-    --block-size SIZE    Block size for dd (default: $DEFAULT_BLOCK_SIZE)
-    --no-progress        Disable progress monitoring
-
-EXAMPLES:
-    $0                                    # Interactive mode
-    $0 image.img.xz /dev/sdb             # Write specific image
-    $0 -d /opt/images                    # Select from custom directory
-    $0 --force --no-verify image.img    # Fast write without verification
-
-SAFETY:
-    - Target device will be completely overwritten
-    - All existing partitions and data will be destroyed
-    - Boot device is automatically excluded from selection
-    - Confirmation required unless --force is used
-
-EOF
+    print_header "OpenWRT Builder - Image Writer v1.0.0"
+    
+    print_msg "$WHITE" "USAGE:"
+    print_msg "$CYAN" "    $0 [OPTIONS] [IMAGE] [DEVICE]"
+    echo ""
+    
+    print_msg "$WHITE" "ARGUMENTS:"
+    print_msg "$CYAN" "    IMAGE           Path to image file (will prompt if not specified)"
+    print_msg "$CYAN" "    DEVICE          Target device (will prompt if not specified)"
+    echo ""
+    
+    print_msg "$WHITE" "OPTIONS:"
+    print_msg "$GREEN" "    -h, --help           ${WHITE}Show this help message"
+    print_msg "$GREEN" "    -f, --force          ${WHITE}Force mode (skip confirmations)"
+    print_msg "$GREEN" "    -q, --quiet          ${WHITE}Quiet mode (minimal output)"
+    print_msg "$GREEN" "    -v, --verbose        ${WHITE}Verbose mode (detailed output)"
+    print_msg "$GREEN" "    -d, --dir DIR        ${WHITE}Directory to search for images"
+    print_msg "$GREEN" "    --no-verify          ${WHITE}Skip image verification after writing"
+    print_msg "$GREEN" "    --allow-mounted      ${WHITE}Allow writing to mounted devices"
+    print_msg "$GREEN" "    --block-size SIZE    ${WHITE}Block size for dd (default: $DEFAULT_BLOCK_SIZE)"
+    print_msg "$GREEN" "    --no-progress        ${WHITE}Disable progress monitoring"
+    echo ""
+    
+    print_msg "$WHITE" "EXAMPLES:"
+    print_msg "$YELLOW" "    $0                                    ${DIM}# Interactive mode"
+    print_msg "$YELLOW" "    $0 image.img.xz /dev/sdb             ${DIM}# Write specific image"
+    print_msg "$YELLOW" "    $0 -d /opt/images                    ${DIM}# Select from custom directory"
+    print_msg "$YELLOW" "    $0 --force --no-verify image.img    ${DIM}# Fast write without verification"
+    echo ""
+    
+    print_msg "$WHITE" "SUPPORTED FORMATS:"
+    print_bullet 0 "Raw images: *.img"
+    print_bullet 0 "Compressed: *.img.xz, *.img.gz, *.img.bz2, *.img.zst"
+    print_bullet 0 "ISO images: *.iso"
+    echo ""
+    
+    print_box "SAFETY FEATURES" \
+        "• Target device will be completely overwritten
+• All existing partitions and data will be destroyed
+• Boot device is automatically excluded from selection
+• Mounted devices require explicit permission
+• Confirmation required unless --force is used
+• Optional verification after writing
+• Automatic retry on write failures"
+    
+    print_msg "$WHITE" "DEVICE SELECTION:"
+    print_bullet 0 "Automatic detection of suitable devices"
+    print_bullet 0 "Interactive selection if multiple devices found"
+    print_bullet 0 "Size validation (image must fit on device)"
+    print_bullet 0 "Integration with detect-media.sh"
+    echo ""
+    
+    print_msg "$WHITE" "WRITE PROCESS:"
+    print_bullet 0 "Automatic decompression of compressed images"
+    print_bullet 0 "Real-time progress monitoring with speed display"
+    print_bullet 0 "Direct I/O for optimal performance"
+    print_bullet 0 "Automatic sync and verification"
+    print_bullet 0 "Detailed logging of all operations"
+    echo ""
+    
+    print_msg "$CYAN" "For more information, visit: https://github.com/Tabes/OpenWRT"
 }
 
 ### Parse command line arguments ###
