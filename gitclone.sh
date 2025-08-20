@@ -3,12 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.3
+### Version: 1.0.4
 ### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.3"
+SCRIPT_VERSION="1.0.4"
 clear
 
 ################################################################################
@@ -429,7 +429,7 @@ create_symlinks() {
     
     ### Global config symlink ###
     local global_config="$TARGET_DIR/builder/config/global.cfg"
-    local target_config="$TARGET_DIR/configss/global.cfg"
+    local target_config="$TARGET_DIR/configs/global.cfg"
     
     if [ -f "$target_config" ]; then
         ### Remove existing symlink if present ###
@@ -455,7 +455,7 @@ validate_installation() {
         "$TARGET_DIR/builder"
         "$TARGET_DIR/builder/scripts"
         "$TARGET_DIR/builder/config"
-        "$TARGET_DIR/configss"
+        "$TARGET_DIR/configs"
     )
     
     for dir in "${required_dirs[@]}"; do
