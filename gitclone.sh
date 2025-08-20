@@ -4,7 +4,7 @@
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
 ### Version: 1.0.2
-### Date:    2025-08-20
+### Date:    2025-08-19
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
@@ -161,23 +161,17 @@ is_newer_version() {
     return 1
 }
 
-### Check if target directory exists and is valid ###
-check_target_directory() {
+### Check if target directory exists and is valid for updates ###
+check_existing_installation() {
     ### If directory doesn't exist, this is first installation ###
     if [ ! -d "$TARGET_DIR" ]; then
-        print_info "Target directory does not exist - this will be a fresh installation"
-        return 1  # No updates possible
+        return 1  # No existing installation
     fi
     
     ### Check if it looks like a valid OpenWRT installation ###
     if [ ! -d "$TARGET_DIR/.git" ]; then
         print_warning "Target directory exists but is not a git repository"
-        if [ "$FORCE_MODE" != "true" ]; then
-            if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
-                error_exit "Installation cancelled"
-            fi
-        fi
-        return 1  # Not a valid installation, no updates
+        return 2  # Invalid installation
     fi
     
     ### Check if it's our OpenWRT project ###
@@ -188,12 +182,7 @@ check_target_directory() {
             print_warning "Target directory contains a different git repository"
             print_info "Found: $remote_url"
             print_info "Expected: $PROJECT_URL"
-            if [ "$FORCE_MODE" != "true" ]; then
-                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
-                    error_exit "Installation cancelled"
-                fi
-            fi
-            return 1  # Different project, no updates
+            return 3  # Wrong repository
         fi
     fi
     
@@ -203,34 +192,53 @@ check_target_directory() {
 
 ### Enhanced update check ###
 check_for_updates() {
-    ### First check if target directory is valid ###
-    if ! check_target_directory; then
-        print_info "No valid installation found - proceeding with fresh installation"
-        return 0
-    fi
+    ### Check what we have ###
+    check_existing_installation
+    local install_status=$?
     
-    ### Now check for script updates ###
-    local project_script="$TARGET_DIR/gitclone.sh"
-    local current_script="$0"
-    
-    ### Skip if we ARE the project version ###
-    if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
-        return 0
-    fi
-    
-    ### Check if project version is newer ###
-    if is_newer_version; then
-        if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
-            echo ""
-            if ask_yes_no "Use updated version from project?" "yes"; then
-                exec_updated_version "$project_script"
-            else
-                print_warning "Continuing with current version"
+    case $install_status in
+        0)  # Valid installation - check for updates
+            print_info "Checking for script updates..."
+            local project_script="$TARGET_DIR/gitclone.sh"
+            local current_script="$0"
+            
+            ### Skip if we ARE the project version ###
+            if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
+                return 0
             fi
-        elif [ "$FORCE_MODE" = "true" ]; then
-            exec_updated_version "$project_script"
-        fi
-    fi
+            
+            ### Check if project version is newer ###
+            if is_newer_version; then
+                if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
+                    echo ""
+                    if ask_yes_no "Use updated version from project?" "yes"; then
+                        exec_updated_version "$project_script"
+                    else
+                        print_warning "Continuing with current version"
+                    fi
+                elif [ "$FORCE_MODE" = "true" ]; then
+                    exec_updated_version "$project_script"
+                fi
+            fi
+            ;;
+        1)  # No installation
+            print_info "No existing installation found - proceeding with fresh installation"
+            ;;
+        2)  # Invalid installation
+            if [ "$FORCE_MODE" != "true" ]; then
+                if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
+                    error_exit "Installation cancelled"
+                fi
+            fi
+            ;;
+        3)  # Wrong repository
+            if [ "$FORCE_MODE" != "true" ]; then
+                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
+                    error_exit "Installation cancelled"
+                fi
+            fi
+            ;;
+    esac
 }
 
 ### Execute updated version ###
@@ -298,7 +306,7 @@ remove_existing() {
     fi
 }
 
-### Clone repository ###
+### Enhanced clone repository with cleanup on failure ###
 clone_repository() {
     print_info "Cloning repository from: $PROJECT_URL"
     print_info "Target directory: $TARGET_DIR"
@@ -307,11 +315,20 @@ clone_repository() {
     ### Create parent directory ###
     mkdir -p "$(dirname "$TARGET_DIR")"
     
-    ### Clone with progress ###
+    ### Clone with progress and error handling ###
     if git clone --progress --branch "$PROJECT_BRANCH" "$PROJECT_URL" "$TARGET_DIR"; then
         print_success "Repository cloned successfully"
     else
-        error_exit "Failed to clone repository"
+        print_error "Failed to clone repository"
+        
+        ### Cleanup failed clone attempt ###
+        if [ -d "$TARGET_DIR" ]; then
+            print_info "Cleaning up failed installation..."
+            rm -rf "$TARGET_DIR"
+            print_success "Cleaned up incomplete installation"
+        fi
+        
+        error_exit "Git clone failed - installation aborted"
     fi
 }
 
