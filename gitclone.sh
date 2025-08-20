@@ -3,12 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.4
+### Version: 1.0.5
 ### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.0.5"
 clear
 
 ################################################################################
@@ -292,9 +292,20 @@ check_for_updates() {
 ### Execute updated version ###
 exec_updated_version() {
     local updated_script="$1"
+    local current_script="$0"
     
     print_info "Switching to updated version..."
     print_info "Executing: $updated_script"
+    
+    ### Copy newer version to user directory for future use ###
+    if [ "$updated_script" != "$current_script" ]; then
+        print_info "Copying updated script to: $current_script"
+        if cp "$updated_script" "$current_script" 2>/dev/null; then
+            print_success "Updated script copied to user directory"
+        else
+            print_warning "Could not copy to user directory (continuing anyway)"
+        fi
+    fi
     
     ### Make sure it's executable ###
     chmod +x "$updated_script"
@@ -429,7 +440,7 @@ create_symlinks() {
     
     ### Global config symlink ###
     local global_config="$TARGET_DIR/builder/config/global.cfg"
-    local target_config="$TARGET_DIR/configs/global.cfg"
+    local target_config="$TARGET_DIR/config/global.cfg"
     
     if [ -f "$target_config" ]; then
         ### Remove existing symlink if present ###
@@ -455,7 +466,7 @@ validate_installation() {
         "$TARGET_DIR/builder"
         "$TARGET_DIR/builder/scripts"
         "$TARGET_DIR/builder/config"
-        "$TARGET_DIR/configs"
+        "$TARGET_DIR/config"
     )
     
     for dir in "${required_dirs[@]}"; do
