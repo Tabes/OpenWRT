@@ -3,12 +3,12 @@
 ### OpenWRT Builder - Git Clone and Setup Script
 ### Clones the OpenWRT project and sets up permissions
 ################################################################################
-### Version: 1.0.2
+### Version: 1.0.3
 ### Date:    2025-08-20
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.3"
 clear
 
 ################################################################################
@@ -45,11 +45,15 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 ### Symbols ###
-SUCCESS="âœ…"
-ERROR="âŒ"
-WARNING="âš ï¸"
-INFO="â„¹ï¸"
-ARROW="âž¤"
+SUCCESS="✅"
+ERROR="❌"
+WARNING="⚠️"
+INFO="ℹ️"
+ARROW="➤"
+
+### Global status variables ###
+TARGET_DIR_STATUS=""
+INSTALLATION_TYPE=""
 
 ################################################################################
 ### HELPER FUNCTIONS
@@ -130,6 +134,81 @@ check_command() {
 }
 
 ################################################################################
+### DIRECTORY STATUS CHECK
+################################################################################
+
+### Check target directory status and set global variables ###
+check_target_directory() {
+    print_info "Checking target directory: $TARGET_DIR"
+    
+    ### Case 1: Directory doesn't exist - prepare for fresh installation ###
+    if [ ! -d "$TARGET_DIR" ]; then
+        print_info "Target directory does not exist - preparing for fresh installation"
+        
+        ### Create parent directory and set permissions ###
+        if ! mkdir -p "$TARGET_DIR" 2>/dev/null; then
+            error_exit "Cannot create target directory: $TARGET_DIR"
+        fi
+        
+        ### Ensure proper ownership of directory ###
+        chown root:root "$TARGET_DIR" 2>/dev/null || true
+        
+        TARGET_DIR_STATUS="FRESH"
+        INSTALLATION_TYPE="fresh"
+        print_success "Prepared for fresh installation"
+        return 0
+    fi
+    
+    ### Case 2: Directory exists but is not a git repository ###
+    if [ ! -d "$TARGET_DIR/.git" ]; then
+        print_warning "Target directory exists but is not a git repository"
+        TARGET_DIR_STATUS="INVALID"
+        INSTALLATION_TYPE="overwrite"
+        
+        if [ "$FORCE_MODE" != "true" ]; then
+            if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
+                error_exit "Installation cancelled"
+            fi
+        fi
+        return 0
+    fi
+    
+    ### Case 3: Directory exists and is a git repository - check if it's our project ###
+    if [ -d "$TARGET_DIR/.git" ]; then
+        cd "$TARGET_DIR"
+        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        
+        ### Check if it's our OpenWRT project ###
+        if [[ "$remote_url" != *"OpenWRT"* ]]; then
+            print_warning "Target directory contains a different git repository"
+            print_info "Found: $remote_url"
+            print_info "Expected: $PROJECT_URL"
+            TARGET_DIR_STATUS="WRONG_REPO"
+            INSTALLATION_TYPE="replace"
+            
+            if [ "$FORCE_MODE" != "true" ]; then
+                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
+                    error_exit "Installation cancelled"
+                fi
+            fi
+            return 0
+        fi
+        
+        ### It's our project - valid installation found ###
+        TARGET_DIR_STATUS="VALID"
+        INSTALLATION_TYPE="update"
+        print_success "Valid OpenWRT installation found"
+        return 0
+    fi
+    
+    ### Fallback - should not reach here ###
+    TARGET_DIR_STATUS="UNKNOWN"
+    INSTALLATION_TYPE="unknown"
+    print_warning "Unknown directory status"
+    return 1
+}
+
+################################################################################
 ### SELF-UPDATE MECHANISM
 ################################################################################
 
@@ -175,96 +254,39 @@ is_newer_version() {
     return 1
 }
 
-### Check if target directory exists and is valid for updates ###
-check_target_directory() {
-    ### If directory doesn't exist, this is first installation ###
-	if [ ! -d "$TARGET_DIR" ]; then
-		print_info "Target directory does not exist - preparing for fresh installation"
-		
-		echo "$TARGET_DIR"
-		### Create parent directory and set permissions ###
-		mkdir -p "$TARGET_DIR" || {
-			error_exit "Cannot create parent directory: $(dirname "$TARGET_DIR")"
-		}
-		
-		### Ensure proper ownership of parent directory ###
-		chown root:root "$TARGET_DIR" 2>/dev/null || true
-		
-		print_success "Prepared for fresh installation"
-		return 1  # No existing installation, but ready for new one
-	fi
-
-    ### Check if it looks like a valid GitHub Installation ###
-    if [ ! -d "$TARGET_DIR/.git" ]; then
-        print_warning "Target directory exists but is not a git repository"
-        return 2  # Invalid installation
-    fi
-    
-    ### Check if it's our GitHub Project ###
-    if [ -d "$TARGET_DIR/.git" ]; then
-        cd "$TARGET_DIR"
-        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
-        if [[ "$remote_url" != *"OpenWRT"* ]]; then
-            print_warning "Target directory contains a different git repository"
-            print_info "Found: $remote_url"
-            print_info "Expected: $PROJECT_URL"
-            return 3  # Wrong repository
-        fi
-    fi
-    
-    print_success "Valid OpenWRT installation found"
-    return 0  # Valid installation, updates possible
-}
-
-### Enhanced update check ###
+### Check for script updates ###
 check_for_updates() {
-    ### Check what we have ###
-    check_target_directory
-    local install_status=$?
+    ### Only check for updates if we have a valid installation ###
+    if [ "$TARGET_DIR_STATUS" != "VALID" ]; then
+        print_info "No existing installation found - skipping update check"
+        return 0
+    fi
     
-    case $install_status in
-        0)  # Valid installation - check for updates
-            print_info "Checking for script updates..."
-            local project_script="$TARGET_DIR/gitclone.sh"
-            local current_script="$0"
-            
-            ### Skip if we ARE the project version ###
-            if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
-                return 0
+    print_info "Checking for script updates..."
+    local project_script="$TARGET_DIR/gitclone.sh"
+    local current_script="$0"
+    
+    ### Skip if we ARE the project version ###
+    if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
+        print_info "Already using project version"
+        return 0
+    fi
+    
+    ### Check if project version is newer ###
+    if is_newer_version; then
+        if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
+            echo ""
+            if ask_yes_no "Use updated version from project?" "yes"; then
+                exec_updated_version "$project_script"
+            else
+                print_warning "Continuing with current version"
             fi
-            
-            ### Check if project version is newer ###
-            if is_newer_version; then
-                if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
-                    echo ""
-                    if ask_yes_no "Use updated version from project?" "yes"; then
-                        exec_updated_version "$project_script"
-                    else
-                        print_warning "Continuing with current version"
-                    fi
-                elif [ "$FORCE_MODE" = "true" ]; then
-                    exec_updated_version "$project_script"
-                fi
-            fi
-            ;;
-        1)  # No installation
-            print_info "No existing installation found - proceeding with fresh installation"
-            ;;
-        2)  # Invalid installation
-            if [ "$FORCE_MODE" != "true" ]; then
-                if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
-                    error_exit "Installation cancelled"
-                fi
-            fi
-            ;;
-        3)  # Wrong repository
-            if [ "$FORCE_MODE" != "true" ]; then
-                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
-                    error_exit "Installation cancelled"
-                fi
-            fi
-            ;;
-    esac
+        elif [ "$FORCE_MODE" = "true" ]; then
+            exec_updated_version "$project_script"
+        fi
+    else
+        print_info "Script is up to date"
+    fi
 }
 
 ### Execute updated version ###
@@ -393,6 +415,12 @@ set_permissions() {
         chmod +x "$TARGET_DIR/builder/build.sh"
         print_success "Made build.sh executable"
     fi
+    
+    ### Make gitclone.sh executable ###
+    if [ -f "$TARGET_DIR/gitclone.sh" ]; then
+        chmod +x "$TARGET_DIR/gitclone.sh"
+        print_success "Made gitclone.sh executable"
+    fi
 }
 
 ### Create symlinks ###
@@ -401,7 +429,7 @@ create_symlinks() {
     
     ### Global config symlink ###
     local global_config="$TARGET_DIR/builder/config/global.cfg"
-    local target_config="$TARGET_DIR/config/global.cfg"
+    local target_config="$TARGET_DIR/configss/global.cfg"
     
     if [ -f "$target_config" ]; then
         ### Remove existing symlink if present ###
@@ -427,7 +455,7 @@ validate_installation() {
         "$TARGET_DIR/builder"
         "$TARGET_DIR/builder/scripts"
         "$TARGET_DIR/builder/config"
-        "$TARGET_DIR/config"
+        "$TARGET_DIR/configss"
     )
     
     for dir in "${required_dirs[@]}"; do
@@ -468,9 +496,10 @@ show_summary() {
     
     ### Project information ###
     print_info "Project Details:"
-    echo "  â€¢ Repository: $PROJECT_URL"
-    echo "  â€¢ Branch:     $PROJECT_BRANCH"
-    echo "  â€¢ Location:   $TARGET_DIR"
+    echo "  • Repository: $PROJECT_URL"
+    echo "  • Branch:     $PROJECT_BRANCH"
+    echo "  • Location:   $TARGET_DIR"
+    echo "  • Type:       $INSTALLATION_TYPE"
     echo ""
     
     ### Git information ###
@@ -481,9 +510,9 @@ show_summary() {
         local commit_msg=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
         
         print_info "Git Information:"
-        echo "  â€¢ Commit:     $commit_hash"
-        echo "  â€¢ Date:       $commit_date"
-        echo "  â€¢ Message:    $commit_msg"
+        echo "  • Commit:     $commit_hash"
+        echo "  • Date:       $commit_date"
+        echo "  • Message:    $commit_msg"
         echo ""
     fi
     
@@ -535,11 +564,11 @@ show_usage() {
     echo ""
     echo "DESCRIPTION:"
     echo "    This script will:"
-    echo "    â€¢ Remove any existing installation"
-    echo "    â€¢ Clone the OpenWRT project from GitHub"
-    echo "    â€¢ Set proper file permissions"
-    echo "    â€¢ Create configuration symlinks"
-    echo "    â€¢ Validate the installation"
+    echo "    • Remove any existing installation"
+    echo "    • Clone the OpenWRT project from GitHub"
+    echo "    • Set proper file permissions"
+    echo "    • Create configuration symlinks"
+    echo "    • Validate the installation"
     echo ""
 }
 
@@ -583,19 +612,22 @@ main() {
     ### Check prerequisites ###
     check_root
     check_command "git" "git"
-	
-    ### Check for updates BEFORE doing anything else ###
+    
+    ### Check target directory status FIRST ###
+    check_target_directory
+    
+    ### Check for updates ONLY if we have a valid installation ###
     check_for_updates
     
-    echo 'check_for_updates... done'
     ### Show what will be done ###
     if [ "$QUIET_MODE" != "true" ]; then
+        print_info "Installation type: $INSTALLATION_TYPE"
         print_info "This script will:"
-        echo "  â€¢ Remove existing installation (if any)"
-        echo "  â€¢ Clone OpenWRT project from GitHub"
-        echo "  â€¢ Set proper permissions"
-        echo "  â€¢ Create configuration links"
-        echo "  â€¢ Validate installation"
+        echo "  • Remove existing installation (if any)"
+        echo "  • Clone OpenWRT project from GitHub"
+        echo "  • Set proper permissions"
+        echo "  • Create configuration links"
+        echo "  • Validate installation"
         echo ""
         
         if [ "$FORCE_MODE" != "true" ]; then
@@ -607,12 +639,26 @@ main() {
         fi
     fi
     
-    ### Execute installation steps ###
-    print_step "1" "Removing existing installation"
-    remove_existing
-    
-    print_step "2" "Cloning repository"
-    clone_repository
+    ### Execute installation steps based on installation type ###
+    case "$INSTALLATION_TYPE" in
+        fresh|overwrite|replace)
+            print_step "1" "Removing existing installation"
+            remove_existing
+            
+            print_step "2" "Cloning repository"
+            clone_repository
+            ;;
+        update)
+            print_step "1" "Updating existing installation"
+            cd "$TARGET_DIR"
+            git fetch origin "$PROJECT_BRANCH"
+            git reset --hard "origin/$PROJECT_BRANCH"
+            print_success "Repository updated successfully"
+            ;;
+        *)
+            error_exit "Unknown installation type: $INSTALLATION_TYPE"
+            ;;
+    esac
     
     print_step "3" "Setting permissions"
     set_permissions
