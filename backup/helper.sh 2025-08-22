@@ -1,14 +1,19 @@
 #!/bin/bash
 ################################################################################
-### OpenWRT Custom Builder - Common Helper Functions
+### OpenWRT Config & Builder - Common Helper Functions
 ### Shared utility functions for all builder scripts
+### Provides output formatting, logging, validation and utility functions
 ################################################################################
-### Project: OpenWRT Custom Builder
-### Version: 1.0.0
-### Author:  OpenWRT Builder Team
-### Date:    2025-08-19
+### Project: OpenWRT Config & Custom Image Builder
+### Version: 1.0.1
+### Author:  Mawage (OpenWRT Builder Team)
+### Date:    2025-08-20
 ### License: MIT
+### Usage:   Source this file to load helper functions
 ################################################################################
+
+SCRIPT_VERSION="1.0.1"
+COMMIT="Common helper Hunctions for Project Scripts"
 
 ### Prevent multiple inclusion ###
 if [ -n "$HELPER_FUNCTIONS_LOADED" ]; then
@@ -17,7 +22,7 @@ fi
 HELPER_FUNCTIONS_LOADED=1
 
 ################################################################################
-### GLOBAL VARIABLES AND CONSTANTS
+### === GLOBAL VARIABLES AND CONSTANTS === ###
 ################################################################################
 
 ### Colors for output ###
@@ -55,7 +60,7 @@ export DEFAULT_QUIET_MODE=false
 export DEFAULT_VERBOSE_MODE=false
 
 ################################################################################
-### BASIC OUTPUT FUNCTIONS
+### === BASIC OUTPUT FUNCTIONS === ###
 ################################################################################
 
 ### Print colored message ###
@@ -79,7 +84,7 @@ print_timestamped() {
 }
 
 ################################################################################
-### HEADER AND FORMATTING FUNCTIONS
+### === HEADER AND FORMATTING FUNCTIONS === ###
 ################################################################################
 
 ### Print main header ###
@@ -143,7 +148,7 @@ print_box() {
 }
 
 ################################################################################
-### STATUS AND NOTIFICATION FUNCTIONS
+### === STATUS AND NOTIFICATION FUNCTIONS === ###
 ################################################################################
 
 ### Print success message ###
@@ -200,7 +205,7 @@ print_progress() {
 }
 
 ################################################################################
-### LOGGING FUNCTIONS
+### === LOGGING FUNCTIONS === ###
 ################################################################################
 
 ### Initialize logging ###
@@ -279,7 +284,7 @@ log_print() {
 }
 
 ################################################################################
-### ERROR HANDLING FUNCTIONS
+### === ERROR HANDLING FUNCTIONS === ###
 ################################################################################
 
 ### Error exit with cleanup ###
@@ -331,7 +336,7 @@ retry_command() {
 }
 
 ################################################################################
-### VALIDATION FUNCTIONS
+### === VALIDATION FUNCTIONS === ###
 ################################################################################
 
 ### Check if running as root ###
@@ -420,7 +425,7 @@ validate_file() {
 }
 
 ################################################################################
-### UTILITY FUNCTIONS
+### === UTILITY FUNCTIONS === ###
 ################################################################################
 
 ### Convert bytes to human readable ###
@@ -501,7 +506,7 @@ url_encode() {
 }
 
 ################################################################################
-### CONFIGURATION FUNCTIONS
+### === CONFIGURATION FUNCTIONS === ###
 ################################################################################
 
 ### Load configuration file ###
@@ -552,7 +557,7 @@ get_config() {
 }
 
 ################################################################################
-### NETWORK FUNCTIONS
+### === NETWORK FUNCTIONS === ###
 ################################################################################
 
 ### Check internet connectivity ###
@@ -600,7 +605,7 @@ check_url() {
 }
 
 ################################################################################
-### CLEANUP FUNCTIONS
+### === CLEANUP FUNCTIONS === ###
 ################################################################################
 
 ### Setup cleanup trap ###
@@ -682,7 +687,7 @@ cleanup_loop_devices() {
 }
 
 ################################################################################
-### INTERACTION FUNCTIONS
+### === INTERACTION FUNCTIONS === ###
 ################################################################################
 
 ### Ask yes/no question ###
@@ -771,7 +776,7 @@ select_from_menu() {
 }
 
 ################################################################################
-### INITIALIZATION
+### === INITIALIZATION === ###
 ################################################################################
 
 ### Initialize helper functions ###
@@ -797,10 +802,10 @@ init_helpers() {
 }
 
 ################################################################################
-### EXPORT FUNCTIONS
+### === EXPORT FUNCTIONS === ###
 ################################################################################
 
-### Export all helper functions ###
+### Export all Helper Functions ###
 export -f print_msg print_plain print_timestamped
 export -f print_header print_subheader print_section print_step print_box
 export -f print_success print_error print_warning print_info print_bullet print_check print_cross print_progress
@@ -815,5 +820,5 @@ export -f ask_yes_no ask_input select_from_menu
 export -f init_helpers
 
 ################################################################################
-### END OF HELPER FUNCTIONS
+### === END OF HELPER FUNCTIONS === ###
 ################################################################################

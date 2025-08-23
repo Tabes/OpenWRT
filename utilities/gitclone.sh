@@ -1,14 +1,18 @@
 #!/bin/bash
 ################################################################################
 ### OpenWRT Builder - Git Clone and Setup Script
-### Clones the OpenWRT project and sets up permissions
+### Clones the OpenWRT Project and setup it's Permissions
 ################################################################################
-### Version: 1.0.5
-### Date:    2025-08-20
+### Project: OpenWRT Custom Builder
+### Version: 1.0.99
+### Author:  Mawage (OpenWRT Builder Team)
+### Date:    2025-08-19
+### License: MIT
 ### Usage:   Run from any directory as root or with sudo
 ################################################################################
 
-SCRIPT_VERSION="1.0.5"
+SCRIPT_VERSION="1.0.99"
+COMMIT="Prepare and clones the $PROJECT_NAME Project"
 clear
 
 ################################################################################
