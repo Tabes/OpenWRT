@@ -21,6 +21,7 @@ if [ -n "$HELPER_FUNCTIONS_LOADED" ]; then
 fi
 HELPER_FUNCTIONS_LOADED=1
 
+
 ################################################################################
 ### === INITIALIZATION === ###
 ################################################################################
@@ -86,6 +87,7 @@ export DEFAULT_LOG_LEVEL=$LOG_LEVEL_INFO
 export DEFAULT_LOG_FILE="/tmp/script.log"
 export DEFAULT_QUIET_MODE=false
 export DEFAULT_VERBOSE_MODE=false
+
 
 ################################################################################
 ### === OUTPUT & FORMATTING FUNCTIONS === ###
@@ -170,6 +172,7 @@ print_box() {
         echo ""
     fi
 }
+
 
 ################################################################################
 ### === STATUS & NOTIFICATION FUNCTIONS === ###
@@ -261,6 +264,7 @@ show_spinner() {
     printf "    \b\b\b\b"
 }
 
+
 ################################################################################
 ### === LOGGING FUNCTIONS === ###
 ################################################################################
@@ -340,6 +344,7 @@ log_print() {
     log_message "$level" "$message"
 }
 
+
 ################################################################################
 ### === ERROR HANDLING FUNCTIONS === ###
 ################################################################################
@@ -391,6 +396,7 @@ retry_command() {
     
     return 1
 }
+
 
 ################################################################################
 ### === SYSTEM CHECK FUNCTIONS === ###
@@ -525,6 +531,7 @@ get_system_info() {
     echo "Disk: $(df -h / | awk 'NR==2 {print $2}')"
 }
 
+
 ################################################################################
 ### === VALIDATION FUNCTIONS === ###
 ################################################################################
@@ -658,6 +665,313 @@ validate_port() {
     fi
 }
 
+
+################################################################################
+### === DIRECTORY & PATH MANAGEMENT === ###
+################################################################################
+
+### Check target directory status with intelligent analysis ###
+check_target_directory() {
+    local target_dir="${1:-$PROJECT_ROOT}"
+    local expected_repo_url="${2:-$REPO_URL}"
+    
+    print_info "Checking target directory: $target_dir"
+    
+    ### Directory doesn't exist - fresh installation ###
+    if [ ! -d "$target_dir" ]; then
+        print_info "Target directory does not exist - preparing for fresh installation"
+        if ! mkdir -p "$target_dir" 2>/dev/null; then
+            print_error "Cannot create target directory: $target_dir"
+            echo "ERROR_CREATE"
+            return 1
+        fi
+        echo "FRESH"
+        return 0
+    fi
+    
+    ### Directory exists but is empty ###
+    if [ -d "$target_dir" ] && [ -z "$(ls -A "$target_dir" 2>/dev/null)" ]; then
+        print_info "Target directory exists but is empty"
+        echo "EMPTY"
+        return 0
+    fi
+    
+    ### Directory exists but not a git repository ###
+    if [ ! -d "$target_dir/.git" ]; then
+        print_warning "Target directory exists but is not a git repository"
+        echo "INVALID"
+        return 1
+    fi
+    
+    ### Directory exists and is a git repository ###
+    if [ -d "$target_dir/.git" ]; then
+        cd "$target_dir"
+        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        
+        ### Check if it's the expected project ###
+        if [ -n "$expected_repo_url" ] && [ -n "$remote_url" ]; then
+            if [[ "$remote_url" != "$expected_repo_url" ]]; then
+                print_warning "Target directory contains a different git repository"
+                print_info "Found: $remote_url"
+                print_info "Expected: $expected_repo_url"
+                echo "WRONG_REPO"
+                return 1
+            fi
+        fi
+        
+        echo "VALID"
+        return 0
+    fi
+    
+    echo "UNKNOWN"
+    return 1
+}
+
+### Set comprehensive permissions for files and directories ###
+set_permissions() {
+    local target="$1"
+    local owner="${2:-auto}"
+    local profile="${3:-standard}"
+    local recursive="${4:-true}"
+    
+    ### Validate target exists ###
+    if [ ! -e "$target" ]; then
+        print_error "Target not found: $target"
+        return 1
+    fi
+    
+    ### Determine owner if auto ###
+    if [ "$owner" = "auto" ]; then
+        if is_root && [ -n "$SUDO_USER" ]; then
+            owner="$SUDO_USER:$SUDO_USER"
+        else
+            local current_user=$(whoami)
+            owner="$current_user:$current_user"
+        fi
+    fi
+    
+    print_info "Setting permissions for: $target"
+    print_info "Owner: $owner, Profile: $profile"
+    
+    ### Handle single file ###
+    if [ -f "$target" ]; then
+        _set_file_permissions "$target" "$owner" "$profile"
+        return $?
+    fi
+    
+    ### Handle directory ###
+    if [ -d "$target" ]; then
+        _set_directory_permissions "$target" "$owner" "$profile" "$recursive"
+        return $?
+    fi
+    
+    print_error "Target is neither file nor directory: $target"
+    return 1
+
+    ################################################################################
+    ### === INTERNAL HELPER FUNCTIONS === ###
+    ################################################################################
+
+    ### Set permissions for single file (internal) ###
+    # shellcheck disable=SC2317  # Function called conditionally
+    _set_file_permissions() {
+        local file="$1"
+        local owner="$2"
+        local profile="$3"
+        
+        ### Set ownership if specified ###
+        if [ "$owner" != "keep" ] && [ "$owner" != "auto" ]; then
+            if command_exists chown; then
+                chown "$owner" "$file" 2>/dev/null || print_warning "Could not change ownership to $owner"
+            fi
+        fi
+        
+        ### Apply permission profile ###
+        case "$profile" in
+            executable)
+                chmod 755 "$file"
+                print_success "Set executable permissions (755): $(basename "$file")"
+                ;;
+            config)
+                chmod 640 "$file"
+                print_success "Set config permissions (640): $(basename "$file")"
+                ;;
+            secret)
+                chmod 600 "$file"
+                print_success "Set secret permissions (600): $(basename "$file")"
+                ;;
+            public)
+                chmod 644 "$file"
+                print_success "Set public permissions (644): $(basename "$file")"
+                ;;
+            readonly)
+                chmod 444 "$file"
+                print_success "Set readonly permissions (444): $(basename "$file")"
+                ;;
+            standard|*)
+                ### Auto-detect based on file type ###
+                if [[ "$file" =~ \.(sh|bash|zsh|py|pl|rb)$ ]] || [ -x "$file" ]; then
+                    chmod 755 "$file"
+                    print_success "Set executable permissions (755): $(basename "$file")"
+                else
+                    chmod 644 "$file"
+                    print_success "Set standard permissions (644): $(basename "$file")"
+                fi
+                ;;
+        esac
+    }
+
+    ### Set permissions for directory and contents (internal) ###
+    # shellcheck disable=SC2317  # Function called conditionally
+    _set_directory_permissions() {
+        local directory="$1"
+        local owner="$2"
+        local profile="$3"
+        local recursive="$4"
+        
+        ### Set ownership if specified ###
+        if [ "$owner" != "keep" ] && [ "$owner" != "auto" ]; then
+            if command_exists chown; then
+                if [ "$recursive" = "true" ]; then
+                    chown -R "$owner" "$directory" 2>/dev/null || print_warning "Could not change ownership to $owner"
+                    print_success "Set ownership to $owner (recursive)"
+                else
+                    chown "$owner" "$directory" 2>/dev/null || print_warning "Could not change ownership to $owner"
+                    print_success "Set ownership to $owner"
+                fi
+            fi
+        fi
+        
+        ### Apply permission profiles ###
+        case "$profile" in
+            standard)
+                ### Standard: 755 for directories, 644 for files, 755 for executables ###
+                if [ "$recursive" = "true" ]; then
+                    find "$directory" -type d -exec chmod 755 {} \; 2>/dev/null
+                    find "$directory" -type f -exec chmod 644 {} \; 2>/dev/null
+                    _make_scripts_executable "$directory"
+                else
+                    chmod 755 "$directory" 2>/dev/null
+                fi
+                print_success "Set standard permissions (755/644 + executables)"
+                ;;
+            web)
+                ### Web: 755 for directories, 644 for files, 755 for web scripts ###
+                if [ "$recursive" = "true" ]; then
+                    find "$directory" -type d -exec chmod 755 {} \; 2>/dev/null
+                    find "$directory" -type f -exec chmod 644 {} \; 2>/dev/null
+                    _make_web_scripts_executable "$directory"
+                else
+                    chmod 755 "$directory" 2>/dev/null
+                fi
+                print_success "Set web permissions (755/644 + web executables)"
+                ;;
+            secure)
+                ### Secure: 750 for directories, 640 for files, 750 for executables ###
+                if [ "$recursive" = "true" ]; then
+                    find "$directory" -type d -exec chmod 750 {} \; 2>/dev/null
+                    find "$directory" -type f -exec chmod 640 {} \; 2>/dev/null
+                    _make_scripts_executable "$directory" "750"
+                else
+                    chmod 750 "$directory" 2>/dev/null
+                fi
+                print_success "Set secure permissions (750/640 + executables)"
+                ;;
+            restrictive)
+                ### Restrictive: 700 for directories, 600 for files ###
+                if [ "$recursive" = "true" ]; then
+                    find "$directory" -type d -exec chmod 700 {} \; 2>/dev/null
+                    find "$directory" -type f -exec chmod 600 {} \; 2>/dev/null
+                else
+                    chmod 700 "$directory" 2>/dev/null
+                fi
+                print_success "Set restrictive permissions (700/600)"
+                ;;
+            public)
+                ### Public: 755 for directories, 644 for files ###
+                if [ "$recursive" = "true" ]; then
+                    find "$directory" -type d -exec chmod 755 {} \; 2>/dev/null
+                    find "$directory" -type f -exec chmod 644 {} \; 2>/dev/null
+                else
+                    chmod 755 "$directory" 2>/dev/null
+                fi
+                print_success "Set public permissions (755/644)"
+                ;;
+            readonly)
+                ### Readonly: 555 for directories, 444 for files ###
+                if [ "$recursive" = "true" ]; then
+                    find "$directory" -type d -exec chmod 555 {} \; 2>/dev/null
+                    find "$directory" -type f -exec chmod 444 {} \; 2>/dev/null
+                else
+                    chmod 555 "$directory" 2>/dev/null
+                fi
+                print_success "Set readonly permissions (555/444)"
+                ;;
+            *)
+                print_error "Unknown permission profile: $profile"
+                print_info "Available profiles: standard, web, secure, restrictive, public, readonly"
+                return 1
+                ;;
+        esac
+    }
+
+    ### Make shell scripts executable (internal) ###
+    # shellcheck disable=SC2317  # Function called conditionally
+    _make_scripts_executable() {
+        local directory="$1"
+        local exec_perm="${2:-755}"
+        
+        ### Shell scripts ###
+        local script_patterns=("*.sh" "*.bash" "*.zsh")
+        for pattern in "${script_patterns[@]}"; do
+            find "$directory" -name "$pattern" -type f -exec chmod "$exec_perm" {} \; 2>/dev/null
+        done
+        
+        ### Python scripts with shebang ###
+        find "$directory" -name "*.py" -type f -exec grep -l "^#!/.*python" {} \; 2>/dev/null | while read -r file; do
+            chmod "$exec_perm" "$file" 2>/dev/null
+        done
+        
+        ### Perl scripts ###
+        find "$directory" -name "*.pl" -type f -exec chmod "$exec_perm" {} \; 2>/dev/null
+        
+        ### Ruby scripts with shebang ###
+        find "$directory" -name "*.rb" -type f -exec grep -l "^#!/.*ruby" {} \; 2>/dev/null | while read -r file; do
+            chmod "$exec_perm" "$file" 2>/dev/null
+        done
+        
+        ### Any file with shebang ###
+        find "$directory" -type f -exec grep -l "^#!" {} \; 2>/dev/null | while read -r file; do
+            ### Skip already processed files ###
+            case "$(basename "$file")" in
+                *.py|*.rb) continue ;;
+            esac
+            chmod "$exec_perm" "$file" 2>/dev/null
+        done
+        
+        print_info "Made scripts executable with $exec_perm permissions"
+    }
+
+    ### Make web scripts executable (internal) ###
+    # shellcheck disable=SC2317  # Function called conditionally
+    _make_web_scripts_executable() {
+        local directory="$1"
+        local exec_perm="${2:-755}"
+        
+        ### Web script patterns ###
+        local web_patterns=("*.php" "*.py" "*.pl" "*.cgi" "*.rb")
+        for pattern in "${web_patterns[@]}"; do
+            find "$directory" -name "$pattern" -type f -exec chmod "$exec_perm" {} \; 2>/dev/null
+        done
+        
+        ### Shell scripts for web ###
+        _make_scripts_executable "$directory" "$exec_perm"
+        
+        print_info "Made web scripts executable with $exec_perm permissions"
+    }
+}
+
+
 ################################################################################
 ### === FILE OPERATION FUNCTIONS === ###
 ################################################################################
@@ -767,6 +1081,7 @@ find_files() {
     
     find "$search_path" -type "$type" -name "$pattern" 2>/dev/null
 }
+
 
 ################################################################################
 ### === PACKAGE MANAGEMENT FUNCTIONS === ###
@@ -909,6 +1224,7 @@ is_package_installed() {
     esac
 }
 
+
 ################################################################################
 ### === UTILITY - CONVERSION FUNCTIONS === ###
 ################################################################################
@@ -990,6 +1306,7 @@ url_encode() {
     echo "$encoded"
 }
 
+
 ################################################################################
 ### === UTILITY - TEXT FUNCTIONS === ###
 ################################################################################
@@ -1060,6 +1377,7 @@ escape_regex() {
     local string="$1"
     echo "$string" | sed 's/[][\.|$*+?{}()^]/\\&/g'
 }
+
 
 ################################################################################
 ### === CONFIGURATION FUNCTIONS === ###
@@ -1191,6 +1509,7 @@ export_config() {
     done < "$config_file"
 }
 
+
 ################################################################################
 ### === NETWORK FUNCTIONS === ###
 ################################################################################
@@ -1320,6 +1639,7 @@ test_port() {
     fi
 }
 
+
 ################################################################################
 ### === CLEANUP FUNCTIONS === ###
 ################################################################################
@@ -1401,6 +1721,7 @@ cleanup_loop_devices() {
         fi
     done
 }
+
 
 ################################################################################
 ### === USER INTERACTION FUNCTIONS === ###
@@ -1571,6 +1892,7 @@ show_menu() {
     done
 }
 
+
 ################################################################################
 ### === PROCESS MANAGEMENT FUNCTIONS === ###
 ################################################################################
@@ -1681,6 +2003,7 @@ check_pidfile() {
     fi
 }
 
+
 ################################################################################
 ### === INITIALIZATION FUNCTIONS === ###
 ################################################################################
@@ -1707,6 +2030,7 @@ init_helpers() {
     log_info "Helper functions initialized for: $script_name"
 }
 
+
 ################################################################################
 ### === EXPORT ALL FUNCTIONS === ###
 ################################################################################
@@ -1715,6 +2039,7 @@ init_helpers() {
 while IFS= read -r func; do
     export -f "$func"
 done < <(declare -F | awk '{print $3}')
+
 
 ################################################################################
 ### === END OF HELPER FUNCTIONS === ###
@@ -1725,11 +2050,6 @@ if [ "$DEFAULT_VERBOSE_MODE" = "true" ]; then
     print_success "Helper functions v${SCRIPT_VERSION} loaded successfully"
 fi
 
-
-#!/bin/bash
-################################################################################
-### Modified Functions for helper.sh
-################################################################################
 
 ################################################################################
 ### === MENU AND HELP === ###
@@ -2598,6 +2918,7 @@ show_version() {
     echo "Copyright (c) 2025 Mawage (Development Team)"
     echo "License: MIT"
 }
+
 
 ################################################################################
 ### === MAIN EXECUTION === ###

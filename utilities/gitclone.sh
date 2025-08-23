@@ -97,51 +97,6 @@ init_git_repo() {
     fi
 }
 
-### Check target directory status ###
-check_target_directory() {
-    local target_dir="${1:-$PROJECT_ROOT}"
-    
-    print_info "Checking target directory: $target_dir"
-    
-    ### Directory doesn't exist - fresh installation ###
-    if [ ! -d "$target_dir" ]; then
-        print_info "Target directory does not exist - preparing for fresh installation"
-        if ! mkdir -p "$target_dir" 2>/dev/null; then
-            error_exit "Cannot create target directory: $target_dir"
-        fi
-        echo "FRESH"
-        return 0
-    fi
-    
-    ### Directory exists but not a git repository ###
-    if [ ! -d "$target_dir/.git" ]; then
-        print_warning "Target directory exists but is not a git repository"
-        echo "INVALID"
-        return 1
-    fi
-    
-    ### Directory exists and is a git repository ###
-    if [ -d "$target_dir/.git" ]; then
-        cd "$target_dir"
-        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
-        
-        ### Check if it's the expected project ###
-        if [ -n "$REPO_URL" ] && [[ "$remote_url" != "$REPO_URL" ]]; then
-            print_warning "Target directory contains a different git repository"
-            print_info "Found: $remote_url"
-            print_info "Expected: $REPO_URL"
-            echo "WRONG_REPO"
-            return 1
-        fi
-        
-        echo "VALID"
-        return 0
-    fi
-    
-    echo "UNKNOWN"
-    return 1
-}
-
 ### Professional Git version checking ###
 check_git_version() {
     local repo_dir="${1:-$PROJECT_ROOT}"
