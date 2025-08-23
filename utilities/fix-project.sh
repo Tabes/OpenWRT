@@ -118,7 +118,7 @@ run_dos2linux() {
     local dry_run="${3:-false}"
     local method="${4:-auto}"
     local dos2linux_script="$WORKFLOW_DIR/dos2linux.sh"
-    
+
     print_header "Step 1: Converting Line Endings (CRLF → LF)"
     
     ### Build dos2linux command ###
