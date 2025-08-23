@@ -1,946 +1,1935 @@
 #!/bin/bash
 ################################################################################
-### OpenWRT Builder - Git Clone and Setup Script
-### Clones the OpenWRT Project and setup it's Permissions
+### Git Workflow Manager - Complete Git Repository Management System
+### Manages version control, branching, releases, and automated workflows
+### Integrates with project configuration and helper functions
 ################################################################################
-### Project: OpenWRT Custom Builder
-### Version: 1.0.99
-### Author:  Mawage (OpenWRT Builder Team)
-### Date:    2025-08-19
+### Project: Git Workflow Manager
+### Version: 1.0.0
+### Author:  Mawage (Workflow Team)
+### Date:    2025-08-23
 ### License: MIT
-### Usage:   Run from any directory as root or with sudo
+### Usage:   ./git.sh [OPTIONS] or source for functions
 ################################################################################
 
-SCRIPT_VERSION="1.0.99"
-COMMIT="Prepare and clones the $PROJECT_NAME Project"
-clear
+SCRIPT_VERSION="1.0.0"
+COMMIT="Complete Git Workflow and Version Management System"
 
-################################################################################
-### SAFETY: Ensure we're in a safe directory before anything else
-################################################################################
-
-### If we're being executed, immediately restart from root directory ###
-if [ "${PWD}" != "/" ] && [ "${GITCLONE_RESTARTED:-}" != "true" ]; then
-    export GITCLONE_RESTARTED="true"
-    cd / && exec "$0" "$@"
-    # If we get here, something went wrong
-    echo "ERROR: Cannot change to safe directory"
-    exit 1
+### Prevent multiple inclusion ###
+if [ -n "$GIT_WORKFLOW_LOADED" ]; then
+    return 0
 fi
+GIT_WORKFLOW_LOADED=1
 
-set -e
-
-################################################################################
-### CONFIGURATION
-################################################################################
-
-### Project settings ###
-PROJECT_URL="https://github.com/Tabes/OpenWRT.git"
-TARGET_DIR="/opt/openWRT"
-PROJECT_BRANCH="${PROJECT_BRANCH:-main}"
-
-### Colors for output ###
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-NC='\033[0m'
-
-### Symbols ###
-SUCCESS="✅"
-ERROR="❌"
-WARNING="⚠️"
-INFO="ℹ️"
-ARROW="➤"
-
-### Global status variables ###
-TARGET_DIR_STATUS=""
-INSTALLATION_TYPE=""
 
 ################################################################################
-### HELPER FUNCTIONS
+### === INITIALIZATION === ###
 ################################################################################
 
-### Print colored message ###
-print_msg() {
-    local color=$1
-    shift
-    echo -e "${color}$*${NC}"
-}
-
-### Print header ###
-print_header() {
-    echo ""
-    print_msg "$BLUE" "################################################################################"
-    print_msg "$BLUE" "### $1"
-    print_msg "$BLUE" "################################################################################"
-    echo ""
-}
-
-### Print step ###
-print_step() {
-    local step=$1
-    shift
-    print_msg "$CYAN" "${ARROW} Step $step: $*"
-}
-
-### Print success ###
-print_success() {
-    print_msg "$GREEN" "$SUCCESS $*"
-}
-
-### Print error ###
-print_error() {
-    print_msg "$RED" "$ERROR $*" >&2
-}
-
-### Print warning ###
-print_warning() {
-    print_msg "$YELLOW" "$WARNING $*"
-}
-
-### Print info ###
-print_info() {
-    print_msg "$WHITE" "$INFO $*"
-}
-
-### Error exit ###
-error_exit() {
-    print_error "$1"
-    exit 1
-}
-
-### Check if running as root ###
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        error_exit "This script must be run as root or with sudo"
-    fi
-}
-
-### Check if command exists ###
-check_command() {
-    local cmd="$1"
-    local package="$2"
+### Load Project Configuration and Helper Functions ###
+load_config() {
+    ### Determine project root dynamically ###
+    local script_path="$(realpath "${BASH_SOURCE[0]}")"
+    local script_dir="$(dirname "$script_path")"
+    local project_root="$(dirname "$script_dir")"
     
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        print_warning "Command '$cmd' not found"
-        if [ -n "$package" ]; then
-            print_info "Installing $package..."
-            apt update >/dev/null 2>&1
-            apt install -y "$package" >/dev/null 2>&1
-            print_success "Installed $package"
-        else
-            error_exit "Required command '$cmd' not available"
+    ### Look for project.conf in standard locations ###
+    local config_file=""
+    if [ -f "$project_root/configs/project.conf" ]; then
+        config_file="$project_root/configs/project.conf"
+    elif [ -f "$project_root/project.conf" ]; then
+        config_file="$project_root/project.conf"
+    else
+        echo "ERROR: Project configuration not found in $project_root"
+        exit 1
+    fi
+    
+    ### Load project configuration ###
+    source "$config_file"
+    
+    ### Now all variables from project.conf are available ###
+    if [ ! -f "$HELPER_SCRIPT" ]; then
+        echo "ERROR: Helper script not found: $HELPER_SCRIPT"
+        exit 1
+    fi
+    source "$HELPER_SCRIPT"
+    
+    print_info "Loaded project config: $PROJECT_NAME"
+}
+
+
+################################################################################
+### === GIT REPOSITORY SETUP === ###
+################################################################################
+
+### Initialize git repository if needed ###
+init_git_repo() {
+    local repo_dir="${1:-$PROJECT_ROOT}"
+    
+    if [ ! -d "$repo_dir/.git" ]; then
+        print_info "Initializing git repository in $repo_dir"
+        
+        cd "$repo_dir" || error_exit "Cannot access directory: $repo_dir"
+        
+        ### Initialize repository ###
+        git init || error_exit "Failed to initialize git repository"
+        
+        ### Configure git user if from project config ###
+        if [ -n "$GIT_USER_NAME" ] && [ -n "$GIT_USER_EMAIL" ]; then
+            git config user.name "$GIT_USER_NAME"
+            git config user.email "$GIT_USER_EMAIL"
+            print_success "Configured git user: $GIT_USER_NAME <$GIT_USER_EMAIL>"
         fi
+        
+        ### Add remote if configured ###
+        if [ -n "$REPO_URL" ]; then
+            git remote add "$REPO_REMOTE_NAME" "$REPO_URL" 2>/dev/null || true
+            print_info "Added remote: $REPO_URL"
+        fi
+        
+        ### Create initial commit ###
+        git add .
+        git commit -m "Initial commit" || print_warning "No files to commit"
+        
+        print_success "Git repository initialized"
+    else
+        print_info "Git repository already exists"
     fi
 }
 
-################################################################################
-### DIRECTORY STATUS CHECK
-################################################################################
-
-### Check target directory status and set global variables ###
+### Check target directory status ###
 check_target_directory() {
-    print_info "Checking target directory: $TARGET_DIR"
+    local target_dir="${1:-$PROJECT_ROOT}"
     
-    ### Case 1: Directory doesn't exist - prepare for fresh installation ###
-    if [ ! -d "$TARGET_DIR" ]; then
+    print_info "Checking target directory: $target_dir"
+    
+    ### Directory doesn't exist - fresh installation ###
+    if [ ! -d "$target_dir" ]; then
         print_info "Target directory does not exist - preparing for fresh installation"
-        
-        ### Create parent directory and set permissions ###
-        if ! mkdir -p "$TARGET_DIR" 2>/dev/null; then
-            error_exit "Cannot create target directory: $TARGET_DIR"
+        if ! mkdir -p "$target_dir" 2>/dev/null; then
+            error_exit "Cannot create target directory: $target_dir"
         fi
-        
-        ### Ensure proper ownership of directory ###
-        chown root:root "$TARGET_DIR" 2>/dev/null || true
-        
-        TARGET_DIR_STATUS="FRESH"
-        INSTALLATION_TYPE="fresh"
-        print_success "Prepared for fresh installation"
+        echo "FRESH"
         return 0
     fi
     
-    ### Case 2: Directory exists but is not a git repository ###
-    if [ ! -d "$TARGET_DIR/.git" ]; then
+    ### Directory exists but not a git repository ###
+    if [ ! -d "$target_dir/.git" ]; then
         print_warning "Target directory exists but is not a git repository"
-        TARGET_DIR_STATUS="INVALID"
-        INSTALLATION_TYPE="overwrite"
-        
-        if [ "$FORCE_MODE" != "true" ]; then
-            if ! ask_yes_no "Continue anyway? This will remove the existing directory" "no"; then
-                error_exit "Installation cancelled"
-            fi
-        fi
-        return 0
+        echo "INVALID"
+        return 1
     fi
     
-    ### Case 3: Directory exists and is a git repository - check if it's our project ###
-    if [ -d "$TARGET_DIR/.git" ]; then
-        cd "$TARGET_DIR"
+    ### Directory exists and is a git repository ###
+    if [ -d "$target_dir/.git" ]; then
+        cd "$target_dir"
         local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
         
-        ### Check if it's our OpenWRT project ###
-        if [[ "$remote_url" != *"OpenWRT"* ]]; then
+        ### Check if it's the expected project ###
+        if [ -n "$REPO_URL" ] && [[ "$remote_url" != "$REPO_URL" ]]; then
             print_warning "Target directory contains a different git repository"
             print_info "Found: $remote_url"
-            print_info "Expected: $PROJECT_URL"
-            TARGET_DIR_STATUS="WRONG_REPO"
-            INSTALLATION_TYPE="replace"
-            
-            if [ "$FORCE_MODE" != "true" ]; then
-                if ! ask_yes_no "Continue anyway? This will replace the existing repository" "no"; then
-                    error_exit "Installation cancelled"
-                fi
-            fi
-            return 0
+            print_info "Expected: $REPO_URL"
+            echo "WRONG_REPO"
+            return 1
         fi
         
-        ### It's our project - valid installation found ###
-        TARGET_DIR_STATUS="VALID"
-        INSTALLATION_TYPE="update"
-        print_success "Valid OpenWRT installation found"
+        echo "VALID"
         return 0
     fi
     
-    ### Fallback - should not reach here ###
-    TARGET_DIR_STATUS="UNKNOWN"
-    INSTALLATION_TYPE="unknown"
-    print_warning "Unknown directory status"
+    echo "UNKNOWN"
     return 1
 }
 
-################################################################################
-### GIT VERSION CHECKING
-################################################################################
-
-### Professional Git version checking function ###
+### Professional Git version checking ###
 check_git_version() {
-    local repo_dir="$1"
-    local script_file="$2"
-    local branch="${3:-main}"
-    local check_type="${4:-smart}"
+    local repo_dir="${1:-$PROJECT_ROOT}"
+    local branch="${2:-$REPO_BRANCH}"
+    local check_type="${3:-commits}"
     
-    # Validate parameters
-    if [ ! -d "$repo_dir" ]; then
-        echo "ERROR: Repository directory not found: $repo_dir"
-        return 3
-    fi
+    validate_directory "$repo_dir" false
     
     if [ ! -d "$repo_dir/.git" ]; then
-        echo "ERROR: Not a git repository: $repo_dir"
+        print_error "Not a git repository: $repo_dir"
         return 3
     fi
     
     cd "$repo_dir"
     
-    # Quick network check
+    ### Quick network check ###
     if ! git ls-remote origin >/dev/null 2>&1; then
-        echo "NETWORK_ERROR: Cannot reach remote repository"
+        print_warning "Cannot reach remote repository"
         return 3
     fi
     
-    case "$check_type" in
-        "tags")
-            _check_version_by_tags "$repo_dir" "$branch"
-            ;;
-        "commits")
-            _check_version_by_commits "$repo_dir" "$branch"
-            ;;
-        "file")
-            _check_file_version "$repo_dir" "$script_file" "$branch"
-            ;;
-        "smart"|*)
-            _smart_version_check "$repo_dir" "$script_file" "$branch"
-            ;;
-    esac
-}
-
-### Tag-based version checking ###
-_check_version_by_tags() {
-    local repo_dir="$1"
-    local branch="$2"
-    cd "$repo_dir"
-    
-    # Fetch latest tags
-    if ! git fetch --tags >/dev/null 2>&1; then
-        echo "FETCH_ERROR: Cannot fetch tags"
+    ### Fetch latest changes ###
+    git fetch origin "$branch" >/dev/null 2>&1 || {
+        print_warning "Cannot fetch branch $branch"
         return 3
-    fi
+    }
     
-    # Get current tag (if on tagged commit)
-    local current_tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
-    
-    # Get latest tag
-    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-    
-    if [ -z "$latest_tag" ]; then
-        echo "NO_TAGS: Repository has no version tags"
-        return 2
-    fi
-    
-    if [ -n "$current_tag" ]; then
-        if [ "$current_tag" != "$latest_tag" ]; then
-            echo "UPDATE_AVAILABLE: Tag update available"
-            echo "CURRENT_VERSION: $current_tag"
-            echo "LATEST_VERSION: $latest_tag"
-            return 0
-        else
-            echo "UP_TO_DATE: On latest tag"
-            echo "VERSION: $current_tag"
-            return 1
-        fi
-    else
-        echo "NOT_ON_TAG: Current commit is not tagged"
-        echo "LATEST_TAG: $latest_tag"
-        local commits_since=$(git rev-list --count $latest_tag..HEAD 2>/dev/null || echo "unknown")
-        echo "COMMITS_SINCE_TAG: $commits_since"
-        return 0
-    fi
-}
-
-### Commit-based version checking ###
-_check_version_by_commits() {
-    local repo_dir="$1"
-    local branch="$2"
-    cd "$repo_dir"
-    
-    # Fetch latest commits
-    if ! git fetch origin "$branch" >/dev/null 2>&1; then
-        echo "FETCH_ERROR: Cannot fetch branch $branch"
-        return 3
-    fi
-    
-    # Compare hashes
+    ### Compare local and remote ###
     local local_hash=$(git rev-parse HEAD 2>/dev/null)
     local remote_hash=$(git rev-parse "origin/$branch" 2>/dev/null)
     
     if [ -z "$local_hash" ] || [ -z "$remote_hash" ]; then
-        echo "HASH_ERROR: Cannot determine commit hashes"
+        print_error "Cannot determine commit hashes"
         return 3
     fi
     
     if [ "$local_hash" != "$remote_hash" ]; then
         local commits_behind=$(git rev-list --count HEAD..origin/$branch 2>/dev/null || echo "unknown")
-        echo "UPDATE_AVAILABLE: Commits available"
-        echo "COMMITS_BEHIND: $commits_behind"
-        echo "LOCAL_HASH: ${local_hash:0:8}"
-        echo "REMOTE_HASH: ${remote_hash:0:8}"
+        print_info "Updates available: $commits_behind commits behind"
+        print_info "Local:  ${local_hash:0:8}"
+        print_info "Remote: ${remote_hash:0:8}"
         return 0
     else
-        echo "UP_TO_DATE: On latest commit"
-        echo "HASH: ${local_hash:0:8}"
+        print_success "Repository is up to date"
+        print_info "Hash: ${local_hash:0:8}"
         return 1
     fi
 }
 
-### File-specific version checking ###
-_check_file_version() {
-    local repo_dir="$1"
-    local file_path="$2"
-    local branch="$3"
-    cd "$repo_dir"
+### Clone repository with enhanced features ###
+clone_repository() {
+    local repo_url="${1:-$REPO_URL}"
+    local target_dir="${2:-$PROJECT_ROOT}"
+    local branch="${3:-$REPO_BRANCH}"
     
-    if [ ! -f "$file_path" ]; then
-        echo "FILE_ERROR: File not found: $file_path"
-        return 3
+    if [ -z "$repo_url" ]; then
+        error_exit "Repository URL not provided"
     fi
     
-    # Fetch latest
-    if ! git fetch origin "$branch" >/dev/null 2>&1; then
-        echo "FETCH_ERROR: Cannot fetch branch $branch"
-        return 3
-    fi
+    print_header "Cloning Repository"
+    print_info "URL: $repo_url"
+    print_info "Target: $target_dir"
+    print_info "Branch: $branch"
     
-    # Check if specific file changed
-    local local_hash=$(git log -1 --format="%H" -- "$file_path" 2>/dev/null)
-    local remote_hash=$(git log -1 --format="%H" "origin/$branch" -- "$file_path" 2>/dev/null)
+    ### Check target directory status ###
+    local dir_status=$(check_target_directory "$target_dir")
     
-    if [ -z "$local_hash" ] || [ -z "$remote_hash" ]; then
-        echo "FILE_HASH_ERROR: Cannot determine file change history"
-        return 3
-    fi
-    
-    if [ "$local_hash" != "$remote_hash" ]; then
-        echo "FILE_CHANGED: File has updates"
-        echo "FILE: $file_path"
-        local local_date=$(git log -1 --format="%cd" --date=short -- "$file_path" 2>/dev/null)
-        local remote_date=$(git log -1 --format="%cd" --date=short "origin/$branch" -- "$file_path" 2>/dev/null)
-        echo "LOCAL_CHANGE: $local_date"
-        echo "REMOTE_CHANGE: $remote_date"
-        return 0
-    else
-        echo "FILE_UNCHANGED: File is up to date"
-        echo "FILE: $file_path"
-        return 1
-    fi
-}
-
-### Smart version checking with optimized fetching ###
-_smart_version_check() {
-    local repo_dir="$1"
-    local script_file="$2"
-    local branch="$3"
-    cd "$repo_dir"
-    
-    # Optimize fetching: only fetch if needed (older than 5 minutes)
-    local last_fetch=$(stat -c %Y .git/FETCH_HEAD 2>/dev/null || echo 0)
-    local current_time=$(date +%s)
-    local fetch_age=$((current_time - last_fetch))
-    
-    if [ $fetch_age -gt 300 ]; then
-        if ! git fetch origin "$branch" >/dev/null 2>&1; then
-            echo "FETCH_ERROR: Cannot fetch updates"
-            return 3
-        fi
-    fi
-    
-    # Strategy 1: Try tag-based version checking first
-    local tag_result=$(_check_version_by_tags "$repo_dir" "$branch" 2>/dev/null | head -1)
-    
-    if [[ "$tag_result" =~ ^(UPDATE_AVAILABLE|UP_TO_DATE): ]]; then
-        echo "$tag_result"
-        local tag_details=$(_check_version_by_tags "$repo_dir" "$branch" 2>/dev/null | tail -n +2)
-        echo "$tag_details"
-        return ${PIPESTATUS[0]}
-    fi
-    
-    # Strategy 2: Fallback to commit comparison
-    echo "FALLBACK: Using commit-based checking"
-    _check_version_by_commits "$repo_dir" "$branch"
-    local commit_result=$?
-    
-    # Strategy 3: If script file specified, also check file-specific changes
-    if [ -n "$script_file" ] && [ -f "$script_file" ]; then
-        echo "FILE_CHECK: Checking $script_file specifically"
-        _check_file_version "$repo_dir" "$script_file" "$branch" | grep -E "^(FILE_CHANGED|FILE_UNCHANGED):"
-    fi
-    
-    return $commit_result
-}
-
-################################################################################
-### SELF-UPDATE MECHANISM
-################################################################################
-
-### Extract version from script ###
-get_script_version() {
-    local script_file="$1"
-    grep "^SCRIPT_VERSION=" "$script_file" 2>/dev/null | cut -d'"' -f2 || echo ""
-}
-
-### Enhanced version check using git ###
-is_newer_version() {
-    local current_script="$0"
-    local project_script="$TARGET_DIR/gitclone.sh"
-    
-    if [ ! -f "$project_script" ]; then
-        return 1
-    fi
-    
-    print_info "Using professional git version checking..."
-    
-    # Use our new git version checking function
-    local git_result=$(check_git_version "$TARGET_DIR" "gitclone.sh" "$PROJECT_BRANCH" "file")
-    
-    # Parse result
-    if echo "$git_result" | grep -q "FILE_CHANGED:"; then
-        print_info "Git detected file changes:"
-        echo "$git_result" | grep -E "^(FILE|LOCAL_CHANGE|REMOTE_CHANGE):" | sed 's/^/  /'
-        return 0
-    elif echo "$git_result" | grep -q "FILE_UNCHANGED:"; then
-        print_info "Git confirms file is unchanged"
-        return 1
-    else
-        # Fallback to traditional method
-        print_warning "Git check inconclusive, using fallback method"
-        _fallback_version_check "$current_script" "$project_script"
-        return $?
-    fi
-}
-
-### Fallback version check method ###
-_fallback_version_check() {
-    local current_script="$1"
-    local project_script="$2"
-    
-    ### First check: File timestamp ###
-    local current_time=$(stat -c %Y "$current_script" 2>/dev/null || echo 0)
-    local project_time=$(stat -c %Y "$project_script" 2>/dev/null || echo 0)
-    
-    ### Second check: Version number (if available) ###
-    local current_version=$(get_script_version "$current_script")
-    local project_version=$(get_script_version "$project_script")
-    
-    ### Check version number first (more reliable) ###
-    if [ -n "$current_version" ] && [ -n "$project_version" ]; then
-        if [ "$project_version" != "$current_version" ]; then
-            print_info "Version number difference detected:"
-            print_info "  Current: v$current_version"
-            print_info "  Project: v$project_version"
-            return 0
-        fi
-    ### Fallback to timestamp if no version numbers ###
-    elif [ "$project_time" -gt "$current_time" ]; then
-        print_info "Newer file found (timestamp based):"
-        print_info "  Current: $(date -d @$current_time '+%Y-%m-%d %H:%M:%S')"
-        print_info "  Project: $(date -d @$project_time '+%Y-%m-%d %H:%M:%S')"
-        return 0
-    fi
-    
-    return 1
-}
-
-### Check for script updates ###
-check_for_updates() {
-    ### Only check for updates if we have a valid installation ###
-    if [ "$TARGET_DIR_STATUS" != "VALID" ]; then
-        print_info "No existing installation found - skipping update check"
-        return 0
-    fi
-    
-    print_info "Checking for script updates using git analysis..."
-    
-    ### Use git version checking for repository status ###
-    local repo_status=$(check_git_version "$TARGET_DIR" "gitclone.sh" "$PROJECT_BRANCH" "commits")
-    
-    if echo "$repo_status" | grep -q "UPDATE_AVAILABLE:"; then
-        print_info "Repository updates detected:"
-        echo "$repo_status" | grep -E "^(COMMITS_BEHIND|LOCAL_HASH|REMOTE_HASH):" | sed 's/^/  /'
-    elif echo "$repo_status" | grep -q "UP_TO_DATE:"; then
-        print_info "Repository is up to date"
-    else
-        print_warning "Cannot determine repository status"
-        print_info "$repo_status"
-    fi
-    
-    local project_script="$TARGET_DIR/gitclone.sh"
-    local current_script="$0"
-    
-    ### Skip if we ARE the project version ###
-    if [ "$(realpath "$current_script" 2>/dev/null)" = "$(realpath "$project_script" 2>/dev/null)" ]; then
-        print_info "Already using project version"
-        return 0
-    fi
-    
-    ### Check if project version is newer ###
-    if is_newer_version; then
-        if [ "$FORCE_MODE" != "true" ] && [ "$QUIET_MODE" != "true" ]; then
-            echo ""
-            if ask_yes_no "Use updated version from project?" "yes"; then
-                exec_updated_version "$project_script"
-            else
-                print_warning "Continuing with current version"
+    case "$dir_status" in
+        INVALID|WRONG_REPO)
+            if ! ask_yes_no "Remove existing directory and continue?" "no"; then
+                error_exit "Cannot clone to existing directory"
             fi
-        elif [ "$FORCE_MODE" = "true" ]; then
-            exec_updated_version "$project_script"
-        fi
-    else
-        print_info "Script is up to date"
-    fi
-}
-
-### Execute updated version ###
-exec_updated_version() {
-    local updated_script="$1"
-    local current_script="$0"
-    shift  # Remove first parameter (updated_script path)
-    
-    print_info "Switching to updated version..."
-    print_info "Executing: $updated_script"
-    
-    ### Copy newer version to user directory for future use ###
-    if [ "$updated_script" != "$current_script" ]; then
-        print_info "Copying updated script to: $current_script"
-        if cp "$updated_script" "$current_script" 2>/dev/null; then
-            print_success "Updated script copied to user directory"
-        else
-            print_warning "Could not copy to user directory (continuing anyway)"
-        fi
-    fi
-    
-    ### Make sure it's executable ###
-    chmod +x "$updated_script"
-    
-    ### Execute with remaining original arguments (without the script path) ###
-    exec "$updated_script" "$@"
-}
-
-### Ask yes/no question ###
-ask_yes_no() {
-    local question="$1"
-    local default="$2"
-    
-    local prompt="$question"
-    case "$default" in
-        yes|y) prompt="$prompt [Y/n]" ;;
-        no|n)  prompt="$prompt [y/N]" ;;
-        *)     prompt="$prompt [y/n]" ;;
+            safe_delete "$target_dir" true
+            ;;
+        VALID)
+            print_info "Valid repository exists, updating instead..."
+            cd "$target_dir"
+            git fetch origin "$branch"
+            git reset --hard "origin/$branch"
+            print_success "Repository updated successfully"
+            return 0
+            ;;
     esac
     
-    while true; do
-        read -p "$prompt: " answer
-        answer="${answer:-$default}"
+    ### Create parent directory ###
+    mkdir -p "$(dirname "$target_dir")"
+    
+    ### Clone with progress ###
+    if git clone --progress --branch "$branch" "$repo_url" "$target_dir"; then
+        cd "$target_dir"
+        print_success "Repository cloned successfully"
         
-        case "$answer" in
-            yes|y|Y|YES) return 0 ;;
-            no|n|N|NO)   return 1 ;;
-            *) print_warning "Please answer yes or no" ;;
-        esac
-    done
-}
-
-################################################################################
-### MAIN FUNCTIONS
-################################################################################
-
-### Remove existing installation ###
-remove_existing() {
-    if [ -d "$TARGET_DIR" ]; then
-        print_warning "Existing installation found at $TARGET_DIR"
-        print_info "Removing existing installation..."
-        
-        ### Stop any running processes that might use the directory ###
-        if command -v fuser >/dev/null 2>&1; then
-            fuser -k "$TARGET_DIR" 2>/dev/null || true
+        ### Configure git user ###
+        if [ -n "$GIT_USER_NAME" ] && [ -n "$GIT_USER_EMAIL" ]; then
+            git config user.name "$GIT_USER_NAME"
+            git config user.email "$GIT_USER_EMAIL"
+            print_info "Configured git user"
         fi
         
-        ### Unmount any loop devices ###
-        for loop in $(losetup -a 2>/dev/null | grep "$TARGET_DIR" | cut -d: -f1); do
-            print_info "Detaching loop device: $loop"
-            losetup -d "$loop" 2>/dev/null || true
-        done
+        ### Set permissions if we have root access ###
+        if is_root; then
+            set_repository_permissions "$target_dir"
+        fi
         
-        ### Remove directory ###
-        rm -rf "$TARGET_DIR"
-        print_success "Removed existing installation"
-    fi
-}
-
-### Enhanced clone repository with cleanup on failure ###
-clone_repository() {
-    print_info "Cloning repository from: $PROJECT_URL"
-    print_info "Target directory: $TARGET_DIR"
-    print_info "Branch: $PROJECT_BRANCH"
-    
-    ### Create parent directory ###
-    mkdir -p "$(dirname "$TARGET_DIR")"
-    
-    ### Clone with progress and error handling ###
-    if git clone --progress --branch "$PROJECT_BRANCH" "$PROJECT_URL" "$TARGET_DIR"; then
-        print_success "Repository cloned successfully"
+        return 0
     else
         print_error "Failed to clone repository"
         
-        ### Cleanup failed clone attempt ###
-        if [ -d "$TARGET_DIR" ]; then
+        ### Cleanup failed attempt ###
+        if [ -d "$target_dir" ]; then
             print_info "Cleaning up failed installation..."
-            rm -rf "$TARGET_DIR"
-            print_success "Cleaned up incomplete installation"
+            safe_delete "$target_dir" true
         fi
         
         error_exit "Git clone failed - installation aborted"
     fi
 }
 
-### Set permissions ###
-set_permissions() {
-    print_info "Setting file permissions..."
+### Set repository permissions ###
+set_repository_permissions() {
+    local repo_dir="${1:-$PROJECT_ROOT}"
     
-    ### Set ownership ###
-    chown -R root:root "$TARGET_DIR"
-    print_success "Set ownership to root:root"
+    print_info "Setting repository permissions..."
+    
+    ### Set ownership to current user or root ###
+    local owner=$(whoami)
+    if is_root && [ -n "$SUDO_USER" ]; then
+        owner="$SUDO_USER"
+    fi
+    
+    chown -R "$owner:$owner" "$repo_dir" 2>/dev/null || true
+    print_success "Set ownership to $owner"
     
     ### Set directory permissions ###
-    find "$TARGET_DIR" -type d -exec chmod 755 {} \;
+    find "$repo_dir" -type d -exec chmod 755 {} \; 2>/dev/null
     print_success "Set directory permissions (755)"
     
     ### Set file permissions ###
-    find "$TARGET_DIR" -type f -exec chmod 644 {} \;
+    find "$repo_dir" -type f -exec chmod 644 {} \; 2>/dev/null
     print_success "Set file permissions (644)"
     
     ### Make scripts executable ###
-    local script_dirs=(
-        "$TARGET_DIR/builder"
-        "$TARGET_DIR/builder/scripts"
-        "$TARGET_DIR/builder/boot"
-    )
-    
-    for dir in "${script_dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            find "$dir" -name "*.sh" -exec chmod +x {} \;
-            print_success "Made scripts executable in: $(basename "$dir")"
-        fi
-    done
-    
-    ### Make main build script executable ###
-    if [ -f "$TARGET_DIR/builder/build.sh" ]; then
-        chmod +x "$TARGET_DIR/builder/build.sh"
-        print_success "Made build.sh executable"
-    fi
-    
-    ### Make gitclone.sh executable ###
-    if [ -f "$TARGET_DIR/gitclone.sh" ]; then
-        chmod +x "$TARGET_DIR/gitclone.sh"
-        print_success "Made gitclone.sh executable"
-    fi
+    find "$repo_dir" -name "*.sh" -exec chmod +x {} \; 2>/dev/null
+    print_success "Made shell scripts executable"
 }
 
-### Create symlinks ###
-create_symlinks() {
-    print_info "Creating configuration symlinks..."
-    
-    ### Global config symlink ###
-    local global_config="$TARGET_DIR/builder/config/global.cfg"
-    local target_config="$TARGET_DIR/config/global.cfg"
-    
-    if [ -f "$target_config" ]; then
-        ### Remove existing symlink if present ###
-        if [ -L "$global_config" ]; then
-            rm -f "$global_config"
-        fi
-        
-        ### Create new symlink ###
-        cd "$TARGET_DIR/builder/config"
-        ln -sf "../../config/global.cfg" "global.cfg"
-        print_success "Created global.cfg symlink"
-    else
-        print_warning "Global config not found, skipping symlink creation"
-    fi
-}
-
-### Validate installation ###
+### Validate repository installation ###
 validate_installation() {
-    print_info "Validating installation..."
+    local repo_dir="${1:-$PROJECT_ROOT}"
     
-    ### Check required directories ###
-    local required_dirs=(
-        "$TARGET_DIR/builder"
-        "$TARGET_DIR/builder/scripts"
-        "$TARGET_DIR/builder/config"
-        "$TARGET_DIR/config"
-    )
+    print_header "Validating Installation"
     
-    for dir in "${required_dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            print_success "Found: $(basename "$dir")"
-        else
-            print_error "Missing: $dir"
-            return 1
-        fi
-    done
+    ### Check if directory exists ###
+    validate_directory "$repo_dir" true
     
-    ### Check key scripts ###
-    local key_scripts=(
-        "$TARGET_DIR/builder/build.sh"
-        "$TARGET_DIR/builder/scripts/helper.sh"
-        "$TARGET_DIR/builder/scripts/detect-media.sh"
-        "$TARGET_DIR/builder/scripts/write-media.sh"
-        "$TARGET_DIR/builder/scripts/debian-luci.sh"
-    )
+    ### Check if it's a git repository ###
+    if [ ! -d "$repo_dir/.git" ]; then
+        print_error "Not a git repository"
+        return 1
+    fi
+    print_check "Valid git repository"
     
-    for script in "${key_scripts[@]}"; do
-        if [ -f "$script" ] && [ -x "$script" ]; then
-            print_success "Executable: $(basename "$script")"
-        elif [ -f "$script" ]; then
-            print_warning "Not executable: $(basename "$script")"
-        else
-            print_error "Missing: $(basename "$script")"
-            return 1
-        fi
-    done
+    ### Check remote configuration ###
+    cd "$repo_dir"
+    local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+    if [ -n "$remote_url" ]; then
+        print_check "Remote configured: $remote_url"
+    else
+        print_cross "No remote configured"
+    fi
+    
+    ### Check current branch ###
+    local current_branch=$(git branch --show-current 2>/dev/null || echo "")
+    if [ -n "$current_branch" ]; then
+        print_check "Current branch: $current_branch"
+    else
+        print_cross "No current branch"
+    fi
+    
+    ### Check for required files from project.conf ###
+    if [ -n "${REQUIRED_FILES[*]}" ]; then
+        print_info "Checking required files..."
+        for file in "${REQUIRED_FILES[@]}"; do
+            if validate_file "$repo_dir/$file" false; then
+                print_check "$(basename "$file")"
+            else
+                print_cross "Missing: $(basename "$file")"
+                return 1
+            fi
+        done
+    fi
+    
+    ### Check for required directories ###
+    if [ -n "${REQUIRED_DIRS[*]}" ]; then
+        print_info "Checking required directories..."
+        for dir in "${REQUIRED_DIRS[@]}"; do
+            if [ -d "$repo_dir/$dir" ]; then
+                print_check "$(basename "$dir")"
+            else
+                print_cross "Missing: $(basename "$dir")"
+                return 1
+            fi
+        done
+    fi
     
     print_success "Installation validation passed"
+    return 0
 }
 
 ### Show installation summary ###
-show_summary() {
-    print_header "INSTALLATION SUMMARY"
+show_installation_summary() {
+    local repo_dir="${1:-$PROJECT_ROOT}"
+    
+    print_header "Installation Summary"
     
     ### Project information ###
-    print_info "Project Details:"
-    echo "  • Repository: $PROJECT_URL"
-    echo "  • Branch:     $PROJECT_BRANCH"
-    echo "  • Location:   $TARGET_DIR"
-    echo "  • Type:       $INSTALLATION_TYPE"
+    print_section "Project Details"
+    echo "  Repository: ${REPO_URL:-Unknown}"
+    echo "  Branch:     ${REPO_BRANCH:-Unknown}"
+    echo "  Location:   $repo_dir"
     echo ""
     
     ### Git information ###
-    if [ -d "$TARGET_DIR/.git" ]; then
-        cd "$TARGET_DIR"
+    if [ -d "$repo_dir/.git" ]; then
+        cd "$repo_dir"
         local commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
         local commit_date=$(git log -1 --format="%cd" --date=short 2>/dev/null || echo "unknown")
         local commit_msg=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
         
-        print_info "Git Information:"
-        echo "  • Commit:     $commit_hash"
-        echo "  • Date:       $commit_date"
-        echo "  • Message:    $commit_msg"
+        print_section "Git Information"
+        echo "  Commit:  $commit_hash"
+        echo "  Date:    $commit_date"
+        echo "  Message: $commit_msg"
         echo ""
     fi
     
-    ### Directory structure ###
-    print_info "Directory Structure:"
-    if command -v tree >/dev/null 2>&1; then
-        tree -L 2 "$TARGET_DIR" 2>/dev/null || ls -la "$TARGET_DIR"
+    ### Repository status ###
+    print_section "Repository Status"
+    local status_output=$(cd "$repo_dir" && git status --porcelain 2>/dev/null)
+    if [ -z "$status_output" ]; then
+        print_success "Working tree is clean"
     else
-        ls -la "$TARGET_DIR"
+        local modified=$(echo "$status_output" | grep -c "^ M" || echo "0")
+        local untracked=$(echo "$status_output" | grep -c "^??" || echo "0")
+        echo "  Modified files:  $modified"
+        echo "  Untracked files: $untracked"
     fi
-    echo ""
     
-    ### Usage instructions ###
-    print_info "Next Steps:"
-    echo "  1. Test device detection:"
-    echo "     sudo $TARGET_DIR/builder/scripts/detect-media.sh"
-    echo ""
-    echo "  2. Start a build:"
-    echo "     sudo $TARGET_DIR/builder/build.sh"
-    echo ""
-    echo "  3. Get help:"
-    echo "     sudo $TARGET_DIR/builder/build.sh --help"
-    echo ""
-    
-    print_success "OpenWRT Builder is ready to use!"
+    print_success "Repository installation completed successfully!"
 }
 
+
 ################################################################################
-### MAIN EXECUTION
+### === VERSION MANAGEMENT === ###
 ################################################################################
 
-### Show usage ###
-show_usage() {
-    print_header "OpenWRT Builder - Git Clone Setup"
+### Extract version from file ###
+get_file_version() {
+    local file="$1"
     
-    echo "USAGE:"
-    echo "    sudo $0 [OPTIONS]"
-    echo ""
-    echo "OPTIONS:"
-    echo "    -h, --help      Show this help message"
-    echo "    -b, --branch    Specify git branch (default: main)"
-    echo "    -f, --force     Force overwrite without confirmation"
-    echo "    -q, --quiet     Quiet mode (minimal output)"
-    echo ""
-    echo "EXAMPLES:"
-    echo "    sudo $0                   # Standard installation"
-    echo "    sudo $0 -b develop        # Install develop branch"
-    echo "    sudo $0 -f                # Force overwrite"
-    echo ""
-    echo "DESCRIPTION:"
-    echo "    This script will:"
-    echo "    • Remove any existing installation"
-    echo "    • Clone the OpenWRT project from GitHub"
-    echo "    • Set proper file permissions"
-    echo "    • Create configuration symlinks"
-    echo "    • Validate the installation"
-    echo ""
+    if ! validate_file "$file" false; then
+        echo "0.0.0"
+        return 1
+    fi
+    
+    ### First try SCRIPT_VERSION variable ###
+    local script_version=$(grep "^SCRIPT_VERSION=" "$file" | head -1 | cut -d'"' -f2)
+    
+    if [ -n "$script_version" ] && [ "$script_version" != "" ]; then
+        echo "$script_version"
+    else
+        ### Fallback to header comment ###
+        grep "^### Version:" "$file" | head -1 | sed 's/.*Version: *//' || echo "0.0.0"
+    fi
 }
 
-### Parse command line arguments ###
-FORCE_MODE=false
-QUIET_MODE=false
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -h|--help)
-            show_usage
-            exit 0
+### Increment version number ###
+increment_version() {
+    local current_version="$1"
+    local increment_type="${2:-patch}"
+    
+    if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "1.0.0"
+        return 0
+    fi
+    
+    local major=$(echo "$current_version" | cut -d. -f1)
+    local minor=$(echo "$current_version" | cut -d. -f2)
+    local patch=$(echo "$current_version" | cut -d. -f3)
+    
+    case "$increment_type" in
+        major)
+            major=$((major + 1))
+            minor=0
+            patch=0
             ;;
-        -b|--branch)
-            PROJECT_BRANCH="$2"
-            shift 2
+        minor)
+            minor=$((minor + 1))
+            patch=0
             ;;
-        -f|--force)
-            FORCE_MODE=true
-            shift
-            ;;
-        -q|--quiet)
-            QUIET_MODE=true
-            shift
-            ;;
-        *)
-            print_error "Unknown option: $1"
-            show_usage
-            exit 1
+        patch|*)
+            patch=$((patch + 1))
             ;;
     esac
-done
+    
+    echo "$major.$minor.$patch"
+}
 
-### Main function ###
-main() {
-    ### Show header ###
-    if [ "$QUIET_MODE" != "true" ]; then
-        print_header "OpenWRT Builder - Git Clone Setup v$SCRIPT_VERSION"
+### Get next version based on git history ###
+get_next_version() {
+    local file="$1"
+    local increment_type="${2:-patch}"
+    
+    ### Get current version from file ###
+    local current_version=$(get_file_version "$file")
+    
+    ### Get latest tag version if available ###
+    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+    
+    ### Use higher version as base ###
+    if [ -n "$latest_tag" ] && [ "$latest_tag" != "$current_version" ]; then
+        print_info "Using tag version $latest_tag as base"
+        current_version="$latest_tag"
     fi
     
-    ### Check prerequisites ###
-    check_root
-    check_command "git" "git"
+    increment_version "$current_version" "$increment_type"
+}
+
+
+################################################################################
+### === FILE HEADER MANAGEMENT === ###
+################################################################################
+
+### Update file header with new version ###
+update_file_header() {
+    local file="$1"
+    local commit_message="${2:-Auto update}"
+    local increment_type="${3:-patch}"
     
-    ### Check target directory status FIRST ###
-    check_target_directory
+    validate_file "$file" true
     
-    ### Check for updates ONLY if we have a valid installation ###
-    check_for_updates
+    ### Backup file ###
+    backup_file "$file"
     
-    ### Show what will be done ###
-    if [ "$QUIET_MODE" != "true" ]; then
-        print_info "Installation type: $INSTALLATION_TYPE"
-        print_info "This script will:"
-        echo "  • Remove existing installation (if any)"
-        echo "  • Clone OpenWRT project from GitHub"
-        echo "  • Set proper permissions"
-        echo "  • Create configuration links"
-        echo "  • Validate installation"
-        echo ""
+    ### Get versions ###
+    local current_version=$(get_file_version "$file")
+    local new_version=$(increment_version "$current_version" "$increment_type")
+    local current_date=$(date +%Y-%m-%d)
+    
+    print_info "Updating $file: v$current_version → v$new_version"
+    
+    ### Create temporary file ###
+    local temp_file=$(create_temp_file "header_update" ".tmp")
+    
+    ### Update header using AWK ###
+    awk -v new_version="$new_version" -v new_date="$current_date" -v new_commit="$commit_message" '
+    BEGIN { in_header = 0; header_done = 0 }
+    
+    # Start of header
+    /^################################################################################$/ && !header_done {
+        if (in_header == 0) {
+            in_header = 1
+            print $0
+        } else {
+            in_header = 0
+            header_done = 1
+            print $0
+        }
+        next
+    }
+    
+    # Inside header - update specific lines
+    in_header == 1 {
+        if (/^### Version:/) {
+            print "### Version: " new_version
+        } else if (/^### Date:/) {
+            print "### Date:    " new_date
+        } else {
+            print $0
+        }
+        next
+    }
+    
+    # Update SCRIPT_VERSION variable
+    /^SCRIPT_VERSION=/ && header_done {
+        print "SCRIPT_VERSION=\"" new_version "\""
+        next
+    }
+    
+    # Update COMMIT variable
+    /^COMMIT=/ && header_done {
+        print "COMMIT=\"" new_commit "\""
+        next
+    }
+    
+    # All other lines
+    { print $0 }
+    ' "$file" > "$temp_file"
+    
+    ### Replace original file ###
+    if safe_move "$temp_file" "$file"; then
+        print_success "Updated $file to version $new_version"
+        echo "  Previous: $current_version"
+        echo "  Current:  $new_version" 
+        echo "  Date:     $current_date"
+        echo "  Message:  $commit_message"
+        return 0
+    else
+        error_exit "Failed to update $file"
+    fi
+}
+
+### Update multiple files ###
+update_multiple_files() {
+    local commit_message="$1"
+    local increment_type="${2:-patch}"
+    shift 2
+    local files=("$@")
+    
+    if [ ${#files[@]} -eq 0 ]; then
+        print_error "No files specified for update"
+        return 1
+    fi
+    
+    print_header "Batch Update: ${#files[@]} files"
+    
+    local updated_files=()
+    local failed_files=()
+    
+    ### Update each file ###
+    for file in "${files[@]}"; do
+        print_step $((${#updated_files[@]} + ${#failed_files[@]} + 1)) "Processing $file"
         
-        if [ "$FORCE_MODE" != "true" ]; then
-            read -p "Continue? (y/N): " -r
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                print_info "Installation cancelled"
-                exit 0
-            fi
+        if update_file_header "$file" "$commit_message" "$increment_type"; then
+            updated_files+=("$file")
+        else
+            failed_files+=("$file")
+            print_error "Failed to update: $file"
+        fi
+    done
+    
+    ### Report results ###
+    echo ""
+    if [ ${#updated_files[@]} -gt 0 ]; then
+        print_success "Successfully updated ${#updated_files[@]} files"
+        for file in "${updated_files[@]}"; do
+            local version=$(get_file_version "$file")
+            print_check "$(basename "$file") v$version"
+        done
+    fi
+    
+    if [ ${#failed_files[@]} -gt 0 ]; then
+        print_warning "Failed to update ${#failed_files[@]} files:"
+        for file in "${failed_files[@]}"; do
+            print_cross "$(basename "$file")"
+        done
+    fi
+    
+    echo "$updated_files"  ### Return updated files list ###
+}
+
+
+################################################################################
+### === GIT COMMIT OPERATIONS === ###
+################################################################################
+
+### Commit file with updated header ###
+commit_with_update() {
+    local file="$1"
+    local commit_message="$2"
+    local increment_type="${3:-patch}"
+    
+    if [ -z "$file" ] || [ -z "$commit_message" ]; then
+        print_error "Usage: commit_with_update <file> <commit_message> [increment_type]"
+        print_info "increment_type: major, minor, patch (default: patch)"
+        return 1
+    fi
+    
+    print_header "Commit with Header Update"
+    
+    ### Update header first ###
+    if ! update_file_header "$file" "$commit_message" "$increment_type"; then
+        error_exit "Header update failed"
+    fi
+    
+    ### Get actual commit message from file ###
+    local actual_commit_message
+    if grep -q "^COMMIT=" "$file"; then
+        actual_commit_message=$(grep "^COMMIT=" "$file" | cut -d'"' -f2)
+    else
+        actual_commit_message="$commit_message"
+    fi
+    
+    ### Stage and commit ###
+    git add "$file" || error_exit "Failed to stage file"
+    
+    if git commit -m "$actual_commit_message"; then
+        local new_version=$(get_file_version "$file")
+        print_success "Committed $(basename "$file") v$new_version"
+        print_info "Message: $actual_commit_message"
+        return 0
+    else
+        error_exit "Git commit failed"
+    fi
+}
+
+### Batch commit multiple files ###
+batch_commit() {
+    local commit_message="$1"
+    local increment_type="${2:-patch}"
+    shift 2
+    local files=("$@")
+    
+    if [ ${#files[@]} -eq 0 ]; then
+        print_error "No files specified for batch commit"
+        return 1
+    fi
+    
+    print_header "Batch Commit: ${#files[@]} files"
+    
+    ### Update all files first ###
+    local updated_files_str=$(update_multiple_files "$commit_message" "$increment_type" "${files[@]}")
+    local updated_files=($updated_files_str)
+    
+    if [ ${#updated_files[@]} -eq 0 ]; then
+        print_warning "No files were updated"
+        return 1
+    fi
+    
+    ### Stage all updated files ###
+    git add "${updated_files[@]}" || error_exit "Failed to stage files"
+    
+    ### Commit all files ###
+    if git commit -m "$commit_message"; then
+        print_success "Batch commit successful: ${#updated_files[@]} files"
+        
+        for file in "${updated_files[@]}"; do
+            local version=$(get_file_version "$file")
+            print_check "$(basename "$file") v$version"
+        done
+        
+        return 0
+    else
+        error_exit "Batch commit failed"
+    fi
+}
+
+
+################################################################################
+### === BRANCH MANAGEMENT === ###
+################################################################################
+
+### Setup standard branch structure ###
+setup_branch_structure() {
+    print_header "Setting up Branch Structure"
+    
+    local main_branch="${REPO_BRANCH:-main}"
+    local develop_branch="${REPO_DEVELOP_BRANCH:-develop}"
+    
+    ### Ensure we're in a git repository ###
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        error_exit "Not in a git repository"
+    fi
+    
+    ### Create or switch to main branch ###
+    if ! git show-ref --verify --quiet "refs/heads/$main_branch"; then
+        git checkout -b "$main_branch" || error_exit "Failed to create $main_branch branch"
+        print_success "Created $main_branch branch"
+    else
+        git checkout "$main_branch" || error_exit "Failed to switch to $main_branch"
+        print_info "Switched to $main_branch branch"
+    fi
+    
+    ### Create develop branch if needed ###
+    if ! git show-ref --verify --quiet "refs/heads/$develop_branch"; then
+        git checkout -b "$develop_branch" || error_exit "Failed to create $develop_branch branch"
+        print_success "Created $develop_branch branch"
+    else
+        print_info "$develop_branch branch already exists"
+    fi
+    
+    ### Set upstream tracking if remote exists ###
+    if git remote get-url origin >/dev/null 2>&1; then
+        git branch --set-upstream-to="origin/$main_branch" "$main_branch" 2>/dev/null || true
+        git branch --set-upstream-to="origin/$develop_branch" "$develop_branch" 2>/dev/null || true
+        print_info "Set upstream tracking"
+    fi
+    
+    ### Switch back to develop ###
+    git checkout "$develop_branch"
+    print_success "Branch structure setup complete"
+}
+
+### Create feature branch ###
+create_feature_branch() {
+    local feature_name="$1"
+    
+    if [ -z "$feature_name" ]; then
+        print_error "Usage: create_feature_branch <feature_name>"
+        print_info "Example: create_feature_branch user-authentication"
+        return 1
+    fi
+    
+    local develop_branch="${REPO_DEVELOP_BRANCH:-develop}"
+    local feature_prefix="${FEATURE_BRANCH_PREFIX:-feature/}"
+    local branch_name="${feature_prefix}${feature_name}"
+    
+    print_header "Creating Feature Branch: $branch_name"
+    
+    ### Ensure develop branch exists ###
+    if ! git show-ref --verify --quiet "refs/heads/$develop_branch"; then
+        print_warning "$develop_branch branch not found, creating it"
+        git checkout -b "$develop_branch"
+    else
+        git checkout "$develop_branch"
+        
+        ### Update develop if remote exists ###
+        if git remote get-url origin >/dev/null 2>&1; then
+            print_info "Updating $develop_branch branch"
+            git pull origin "$develop_branch" 2>/dev/null || print_warning "Could not pull latest changes"
         fi
     fi
     
-    ### Execute installation steps based on installation type ###
-    case "$INSTALLATION_TYPE" in
-        fresh|overwrite|replace)
-            print_step "1" "Removing existing installation"
-            remove_existing
-            
-            print_step "2" "Cloning repository"
-            clone_repository
-            ;;
-        update)
-            print_step "1" "Updating existing installation"
-            cd "$TARGET_DIR"
-            git fetch origin "$PROJECT_BRANCH"
-            git reset --hard "origin/$PROJECT_BRANCH"
-            print_success "Repository updated successfully"
-            ;;
-        *)
-            error_exit "Unknown installation type: $INSTALLATION_TYPE"
-            ;;
-    esac
+    ### Create feature branch ###
+    git checkout -b "$branch_name" || error_exit "Failed to create feature branch"
     
-    print_step "3" "Setting permissions"
-    set_permissions
+    print_success "Created and switched to feature branch: $branch_name"
+    print_info "Work on your feature, then run: finish_feature_branch $feature_name"
+}
+
+### Merge feature branch back ###
+finish_feature_branch() {
+    local feature_name="$1"
     
-    print_step "4" "Creating symlinks"
-    create_symlinks
+    if [ -z "$feature_name" ]; then
+        print_error "Usage: finish_feature_branch <feature_name>"
+        return 1
+    fi
     
-    print_step "5" "Validating installation"
-    validate_installation
+    local develop_branch="${REPO_DEVELOP_BRANCH:-develop}"
+    local feature_prefix="${FEATURE_BRANCH_PREFIX:-feature/}"
+    local branch_name="${feature_prefix}${feature_name}"
+    local current_branch=$(git branch --show-current)
     
-    ### Show summary ###
-    if [ "$QUIET_MODE" != "true" ]; then
-        show_summary
+    print_header "Finishing Feature Branch: $branch_name"
+    
+    ### Ensure we're on the feature branch or switch to it ###
+    if [ "$current_branch" != "$branch_name" ]; then
+        if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
+            error_exit "Feature branch $branch_name not found"
+        fi
+        git checkout "$branch_name" || error_exit "Failed to switch to feature branch"
+    fi
+    
+    ### Switch to develop ###
+    git checkout "$develop_branch" || error_exit "Failed to switch to $develop_branch"
+    
+    ### Merge feature branch ###
+    if git merge "$branch_name" --no-ff -m "Merge feature: $feature_name"; then
+        print_success "Feature $feature_name merged into $develop_branch"
+        
+        ### Delete feature branch ###
+        if ask_yes_no "Delete feature branch $branch_name?" "yes"; then
+            git branch -d "$branch_name"
+            print_success "Deleted feature branch: $branch_name"
+        fi
+        
+        return 0
     else
-        print_success "OpenWRT Builder installed successfully at $TARGET_DIR"
+        error_exit "Failed to merge feature branch"
     fi
 }
 
-### Run main function ###
-main "$@"
+
+################################################################################
+### === RELEASE MANAGEMENT === ###
+################################################################################
+
+### Create version tag ###
+create_version_tag() {
+    local version="$1"
+    local message="$2"
+    
+    if [ -z "$version" ]; then
+        print_error "Usage: create_version_tag <version> [message]"
+        print_info "Example: create_version_tag v1.2.3 'Release with new features'"
+        return 1
+    fi
+    
+    ### Add version prefix if needed ###
+    local version_prefix="${VERSION_PREFIX:-v}"
+    if [[ ! "$version" =~ ^$version_prefix[0-9] ]]; then
+        version="${version_prefix}$version"
+    fi
+    
+    ### Validate version format ###
+    if [[ ! "$version" =~ ^$version_prefix[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        print_error "Invalid version format. Use ${version_prefix}X.Y.Z (e.g., ${version_prefix}1.2.3)"
+        return 1
+    fi
+    
+    ### Check if tag exists ###
+    if git tag -l | grep -q "^$version$"; then
+        print_error "Tag $version already exists"
+        return 1
+    fi
+    
+    ### Create annotated tag ###
+    local tag_message="${message:-Release $version}"
+    
+    if git tag -a "$version" -m "$tag_message"; then
+        print_success "Created tag: $version"
+        print_info "Message: $tag_message"
+        return 0
+    else
+        error_exit "Failed to create tag"
+    fi
+}
+
+### Create full release ###
+create_release() {
+    local version="$1"
+    local message="$2"
+    
+    if [ -z "$version" ]; then
+        print_error "Usage: create_release <version> [message]"
+        print_info "Example: create_release 1.2.3 'Major feature release'"
+        return 1
+    fi
+    
+    local main_branch="${REPO_BRANCH:-main}"
+    local develop_branch="${REPO_DEVELOP_BRANCH:-develop}"
+    
+    print_header "Creating Release: $version"
+    
+    ### Ensure branches exist ###
+    if ! git show-ref --verify --quiet "refs/heads/$develop_branch"; then
+        error_exit "$develop_branch branch not found"
+    fi
+    
+    if ! git show-ref --verify --quiet "refs/heads/$main_branch"; then
+        git checkout -b "$main_branch"
+        print_info "Created $main_branch branch"
+    fi
+    
+    ### Switch to develop and ensure it's clean ###
+    git checkout "$develop_branch"
+    
+    if ! git diff --quiet; then
+        print_warning "Uncommitted changes in $develop_branch"
+        if ! ask_yes_no "Continue with release anyway?" "no"; then
+            print_info "Release cancelled"
+            return 1
+        fi
+    fi
+    
+    ### Merge develop to main ###
+    git checkout "$main_branch"
+    
+    if git merge "$develop_branch" --no-ff -m "Release $version"; then
+        print_success "Merged $develop_branch to $main_branch"
+    else
+        error_exit "Failed to merge for release"
+    fi
+    
+    ### Create version tag ###
+    create_version_tag "$version" "$message"
+    
+    ### Switch back to develop ###
+    git checkout "$develop_branch"
+    
+    print_success "Release $version created successfully!"
+    
+    ### Ask to push ###
+    if ask_yes_no "Push release to remote repository?" "yes"; then
+        push_to_remote true
+    fi
+}
+
+
+################################################################################
+### === REMOTE SYNCHRONIZATION === ###
+################################################################################
+
+### Push changes to remote ###
+push_to_remote() {
+    local push_tags="${1:-false}"
+    local branch=$(git branch --show-current)
+    
+    print_header "Pushing to Remote Repository"
+    
+    ### Check if remote exists ###
+    if ! git remote get-url origin >/dev/null 2>&1; then
+        print_warning "No remote repository configured"
+        return 1
+    fi
+    
+    ### Push current branch ###
+    print_info "Pushing $branch branch..."
+    
+    if git push origin "$branch" 2>/dev/null; then
+        print_success "Pushed $branch branch"
+    else
+        print_warning "Failed to push $branch branch"
+        return 1
+    fi
+    
+    ### Push tags if requested ###
+    if [ "$push_tags" = "true" ] || [ "$push_tags" = "yes" ]; then
+        print_info "Pushing tags..."
+        
+        if git push origin --tags 2>/dev/null; then
+            print_success "Pushed tags"
+        else
+            print_warning "Failed to push tags"
+        fi
+    fi
+    
+    return 0
+}
+
+### Pull changes from remote ###
+pull_from_remote() {
+    local branch="${1:-$(git branch --show-current)}"
+    
+    print_header "Pulling from Remote Repository"
+    
+    ### Check if remote exists ###
+    if ! git remote get-url origin >/dev/null 2>&1; then
+        print_warning "No remote repository configured"
+        return 1
+    fi
+    
+    ### Fetch latest changes ###
+    print_info "Fetching latest changes..."
+    
+    if git fetch origin 2>/dev/null; then
+        print_success "Fetched latest changes"
+    else
+        print_warning "Failed to fetch changes"
+        return 1
+    fi
+    
+    ### Pull changes ###
+    print_info "Pulling $branch branch..."
+    
+    if git pull origin "$branch" 2>/dev/null; then
+        print_success "Pulled latest changes for $branch"
+        return 0
+    else
+        print_warning "Failed to pull changes"
+        return 1
+    fi
+}
+
+### Full synchronization ###
+sync_with_remote() {
+    local push_after_pull="${1:-true}"
+    
+    print_header "Synchronizing with Remote Repository"
+    
+    ### Pull latest changes ###
+    if pull_from_remote; then
+        print_info "Pull completed successfully"
+    else
+        print_warning "Pull failed, continuing..."
+    fi
+    
+    ### Push local changes if requested ###
+    if [ "$push_after_pull" = "true" ]; then
+        echo ""
+        if push_to_remote; then
+            print_info "Push completed successfully"
+        else
+            print_warning "Push failed"
+        fi
+    fi
+    
+    print_success "Synchronization completed"
+}
+
+
+################################################################################
+### === STATUS AND INFORMATION === ###
+################################################################################
+
+### Show file version status ###
+show_file_status() {
+    local file="$1"
+    
+    validate_file "$file" true
+    
+    print_header "File Status: $(basename "$file")"
+    
+    ### Version information ###
+    local version=$(get_file_version "$file")
+    local commit_msg=""
+    
+    if grep -q "^COMMIT=" "$file"; then
+        commit_msg=$(grep "^COMMIT=" "$file" | cut -d'"' -f2)
+    fi
+    
+    print_info "Version Information:"
+    echo "  Current Version: $version"
+    echo "  Commit Message:  ${commit_msg:-Not set}"
+    echo "  Last Modified:   $(stat -c %y "$file" 2>/dev/null | cut -d' ' -f1 || echo "unknown")"
+    echo ""
+    
+    ### Git information if available ###
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        print_info "Git Information:"
+        
+        if git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+            echo "  Git Status:      $(git status --porcelain "$file" | cut -c1-2 || echo "Clean")"
+            echo "  Last Commit:     $(git log -1 --format='%h - %s' -- "$file" 2>/dev/null || echo 'Never committed')"
+            echo "  Last Author:     $(git log -1 --format='%an' -- "$file" 2>/dev/null || echo 'Unknown')"
+            echo "  Total Commits:   $(git rev-list --count HEAD -- "$file" 2>/dev/null || echo '0')"
+        else
+            echo "  Git Status:      Not tracked"
+        fi
+    fi
+}
+
+### List all project files with versions ###
+list_project_files() {
+    print_header "Project Files with Versions"
+    
+    ### Find files with SCRIPT_VERSION ###
+    local files=($(find "${PROJECT_ROOT:-$PWD}" -name "*.sh" -exec grep -l "SCRIPT_VERSION=" {} \; 2>/dev/null))
+    
+    if [ ${#files[@]} -eq 0 ]; then
+        print_warning "No versioned files found"
+        return 1
+    fi
+    
+    print_info "Found ${#files[@]} versioned files:"
+    echo ""
+    
+    ### Display files with versions ###
+    for file in "${files[@]}"; do
+        local version=$(get_file_version "$file")
+        local relative_path="${file#$PWD/}"
+        printf "  %-30s v%s\n" "$(basename "$file")" "$version"
+    done
+    
+    echo ""
+    print_info "Use 'show_file_status <file>' for detailed information"
+}
+
+### Repository health check ###
+check_repository_health() {
+    print_header "Git Repository Health Check"
+    
+    local issues=0
+    
+    ### Check if in git repository ###
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        print_error "Not in a git repository"
+        return 1
+    fi
+    print_check "Git repository detected"
+    
+    ### Check remote configuration ###
+    if ! git remote get-url origin >/dev/null 2>&1; then
+        print_cross "No remote 'origin' configured"
+        ((issues++))
+    else
+        local remote_url=$(git remote get-url origin)
+        print_check "Remote origin: $remote_url"
+    fi
+    
+    ### Check git user configuration ###
+    local user_name=$(git config user.name 2>/dev/null)
+    local user_email=$(git config user.email 2>/dev/null)
+    
+    if [ -z "$user_name" ]; then
+        print_cross "Git user.name not configured"
+        ((issues++))
+    else
+        print_check "Git user.name: $user_name"
+    fi
+    
+    if [ -z "$user_email" ]; then
+        print_cross "Git user.email not configured"
+        ((issues++))
+    else
+        print_check "Git user.email: $user_email"
+    fi
+    
+    ### Check for uncommitted changes ###
+    if ! git diff --quiet 2>/dev/null; then
+        print_warning "Uncommitted changes in working directory"
+        ((issues++))
+    else
+        print_check "Working directory clean"
+    fi
+    
+    ### Check if ahead/behind remote ###
+    if git remote get-url origin >/dev/null 2>&1; then
+        local current_branch=$(git branch --show-current)
+        git fetch origin 2>/dev/null || true
+        
+        local ahead=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+        local behind=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo "0")
+        
+        if [ "$ahead" -gt 0 ]; then
+            print_warning "Local branch is $ahead commits ahead of remote"
+        fi
+        
+        if [ "$behind" -gt 0 ]; then
+            print_warning "Local branch is $behind commits behind remote"
+        fi
+        
+        if [ "$ahead" -eq 0 ] && [ "$behind" -eq 0 ]; then
+            print_check "Branch synchronized with remote"
+        fi
+    fi
+    
+    ### Check branch structure ###
+    local main_branch="${REPO_BRANCH:-main}"
+    local develop_branch="${REPO_DEVELOP_BRANCH:-develop}"
+    
+    if git show-ref --verify --quiet "refs/heads/$main_branch"; then
+        print_check "$main_branch branch exists"
+    else
+        print_cross "$main_branch branch missing"
+        ((issues++))
+    fi
+    
+    if git show-ref --verify --quiet "refs/heads/$develop_branch"; then
+        print_check "$develop_branch branch exists"
+    else
+        print_cross "$develop_branch branch missing"
+        ((issues++))
+    fi
+    
+    ### Summary ###
+    echo ""
+    if [ $issues -eq 0 ]; then
+        print_success "Repository health: EXCELLENT ✨"
+        print_info "All checks passed successfully"
+    elif [ $issues -le 2 ]; then
+        print_warning "Repository health: GOOD ($issues minor issues)"
+        print_info "Consider addressing the issues above"
+    else
+        print_error "Repository health: NEEDS ATTENTION ($issues issues)"
+        print_info "Please fix the issues before continuing"
+    fi
+    
+    return $issues
+}
+
+### Show comprehensive git repository status ###
+show_git_status() {
+    print_header "Git Repository Status"
+    
+    ### Check if in repository ###
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        print_error "Not in a git repository"
+        return 1
+    fi
+    
+    ### Basic repository information ###
+    print_section "Repository Information"
+    echo "  Repository Root: $(git rev-parse --show-toplevel)"
+    echo "  Current Branch:  $(git branch --show-current)"
+    echo "  Remote URL:      $(git remote get-url origin 2>/dev/null || echo 'No remote configured')"
+    echo "  Total Branches:  $(git branch -a | wc -l)"
+    echo "  Total Tags:      $(git tag | wc -l)"
+    echo ""
+    
+    ### Recent commits ###
+    print_section "Recent Commits"
+    git log --oneline -5 2>/dev/null || echo "  No commits found"
+    echo ""
+    
+    ### Working tree status ###
+    print_section "Working Tree Status"
+    local status_output=$(git status --porcelain)
+    
+    if [ -z "$status_output" ]; then
+        print_success "Working tree is clean"
+    else
+        local modified=$(echo "$status_output" | grep -c "^ M" || echo "0")
+        local untracked=$(echo "$status_output" | grep -c "^??" || echo "0") 
+        local staged=$(echo "$status_output" | grep -c "^[AM]" || echo "0")
+        
+        echo "  Modified files:  $modified"
+        echo "  Untracked files: $untracked"
+        echo "  Staged files:    $staged"
+        
+        if [ $modified -gt 0 ]; then
+            echo ""
+            print_info "Modified files:"
+            git status --porcelain | grep "^ M" | sed 's/^ M /  • /'
+        fi
+        
+        if [ $untracked -gt 0 ]; then
+            echo ""
+            print_info "Untracked files:"
+            git status --porcelain | grep "^??" | sed 's/^?? /  • /'
+        fi
+    fi
+    echo ""
+    
+    ### Remote synchronization status ###
+    if git remote get-url origin >/dev/null 2>&1; then
+        print_section "Remote Synchronization"
+        git fetch --dry-run 2>&1 | grep -q "up to date" && print_check "Remote is up to date" || print_warning "Remote updates available"
+        
+        local ahead=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+        local behind=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo "0")
+        
+        echo "  Commits ahead:   $ahead"
+        echo "  Commits behind:  $behind"
+    fi
+}
+
+
+################################################################################
+### === INTERACTIVE MENUS === ###
+################################################################################
+
+### Main interactive workflow menu ###
+show_workflow_menu() {
+    clear
+    print_header "Git Workflow Manager - Interactive Menu"
+    
+    echo "📋 AVAILABLE ACTIONS:"
+    echo ""
+    echo "  === FILE & VERSION MANAGEMENT ==="
+    echo "   1) Update file header with version bump"
+    echo "   2) Commit file with header update"
+    echo "   3) Batch update multiple files"
+    echo "   4) Show file version status"
+    echo "   5) List all project files"
+    echo ""
+    echo "  === REPOSITORY MANAGEMENT ==="
+    echo "   6) Initialize git repository"
+    echo "   7) Clone remote repository"
+    echo "   8) Show git repository status"
+    echo "   9) Repository health check"
+    echo ""
+    echo "  === BRANCH MANAGEMENT ==="
+    echo "  10) Setup branch structure (main/develop)"
+    echo "  11) Create feature branch"
+    echo "  12) Finish feature branch"
+    echo ""
+    echo "  === RELEASE MANAGEMENT ==="
+    echo "  13) Create version tag"
+    echo "  14) Create full release"
+    echo ""
+    echo "  === SYNCHRONIZATION ==="
+    echo "  15) Push to remote repository"
+    echo "  16) Pull from remote repository"
+    echo "  17) Full sync with remote"
+    echo ""
+    echo "  === HELP & EXIT ==="
+    echo "  18) Show detailed help"
+    echo "  19) Exit"
+    echo ""
+    
+    local choice=$(ask_input "Enter your choice" "1" "validate_menu_choice")
+    
+    case $choice in
+        1) show_update_header_menu ;;
+        2) show_commit_update_menu ;;
+        3) show_batch_update_menu ;;
+        4) show_file_status_menu ;;
+        5) list_project_files ;;
+        6) show_init_repo_menu ;;
+        7) show_clone_repo_menu ;;
+        8) show_git_status ;;
+        9) check_repository_health ;;
+        10) setup_branch_structure ;;
+        11) show_create_feature_menu ;;
+        12) show_finish_feature_menu ;;
+        13) show_create_tag_menu ;;
+        14) show_create_release_menu ;;
+        15) push_to_remote ;;
+        16) pull_from_remote ;;
+        17) sync_with_remote ;;
+        18) show_help_documentation ;;
+        19) print_info "Exiting Git Workflow Manager..."; exit 0 ;;
+        *) 
+            print_error "Invalid choice. Please select 1-19."
+            pause "Press Enter to continue..."
+            show_workflow_menu
+            ;;
+    esac
+    
+    ### Return to menu after action ###
+    echo ""
+    pause "Press Enter to continue..."
+    show_workflow_menu
+}
+
+### Update header submenu ###
+show_update_header_menu() {
+    clear
+    print_header "Update File Header"
+    
+    local file=$(ask_input "Enter file path")
+    local commit_msg=$(ask_input "Enter commit message" "Auto update")
+    local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
+    
+    if validate_file "$file" false; then
+        update_file_header "$file" "$commit_msg" "$version_type"
+    else
+        print_error "File not found: $file"
+    fi
+}
+
+### Commit with update submenu ###
+show_commit_update_menu() {
+    clear
+    print_header "Commit with Header Update"
+    
+    local file=$(ask_input "Enter file path")
+    local commit_msg=$(ask_input "Enter commit message")
+    local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
+    
+    if [ -n "$file" ] && [ -n "$commit_msg" ]; then
+        commit_with_update "$file" "$commit_msg" "$version_type"
+    else
+        print_error "File path and commit message are required"
+    fi
+}
+
+### Batch update submenu ###
+show_batch_update_menu() {
+    clear
+    print_header "Batch Update Files"
+    
+    local commit_msg=$(ask_input "Enter commit message")
+    local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
+    local files_input=$(ask_input "Enter file paths (space-separated)")
+    
+    if [ -n "$commit_msg" ] && [ -n "$files_input" ]; then
+        local files=($files_input)
+        batch_commit "$commit_msg" "$version_type" "${files[@]}"
+    else
+        print_error "Commit message and file paths are required"
+    fi
+}
+
+### File status submenu ###
+show_file_status_menu() {
+    clear
+    print_header "Show File Status"
+    
+    local file=$(ask_input "Enter file path")
+    
+    if [ -n "$file" ]; then
+        show_file_status "$file"
+    else
+        print_error "File path is required"
+    fi
+}
+
+### Initialize repository submenu ###
+show_init_repo_menu() {
+    clear
+    print_header "Initialize Git Repository"
+    
+    local repo_dir=$(ask_input "Enter repository directory" "$PROJECT_ROOT")
+    
+    if [ -n "$repo_dir" ]; then
+        init_git_repo "$repo_dir"
+    fi
+}
+
+### Clone repository submenu ###
+show_clone_repo_menu() {
+    clear
+    print_header "Clone Remote Repository"
+    
+    ### Check if directory already exists ###
+    if [ -d "$PROJECT_ROOT" ]; then
+        local dir_status=$(check_target_directory "$PROJECT_ROOT")
+        print_info "Current directory status: $dir_status"
+        echo ""
+    fi
+    
+    local repo_url=$(ask_input "Enter repository URL" "$REPO_URL")
+    local target_dir=$(ask_input "Enter target directory" "$PROJECT_ROOT")
+    local branch=$(ask_input "Enter branch name" "$REPO_BRANCH")
+    
+    if [ -n "$repo_url" ] && [ -n "$target_dir" ]; then
+        clone_repository "$repo_url" "$target_dir" "$branch"
+        
+        ### Show summary after successful clone ###
+        if [ $? -eq 0 ]; then
+            echo ""
+            show_installation_summary "$target_dir"
+        fi
+    else
+        print_error "Repository URL and target directory are required"
+    fi
+}
+
+### Create feature branch submenu ###
+show_create_feature_menu() {
+    clear
+    print_header "Create Feature Branch"
+    
+    local feature_name=$(ask_input "Enter feature name (e.g., user-authentication)")
+    
+    if [ -n "$feature_name" ]; then
+        create_feature_branch "$feature_name"
+    else
+        print_error "Feature name is required"
+    fi
+}
+
+### Finish feature branch submenu ###
+show_finish_feature_menu() {
+    clear
+    print_header "Finish Feature Branch"
+    
+    ### Show current feature branches ###
+    local feature_branches=($(git branch | grep "${FEATURE_BRANCH_PREFIX:-feature/}" | sed 's/^[* ] //' | sed "s/${FEATURE_BRANCH_PREFIX:-feature\/}//"))
+    
+    if [ ${#feature_branches[@]} -eq 0 ]; then
+        print_warning "No feature branches found"
+        return 1
+    fi
+    
+    print_info "Available feature branches:"
+    for branch in "${feature_branches[@]}"; do
+        echo "  • $branch"
+    done
+    echo ""
+    
+    local feature_name=$(ask_input "Enter feature name to finish")
+    
+    if [ -n "$feature_name" ]; then
+        finish_feature_branch "$feature_name"
+    else
+        print_error "Feature name is required"
+    fi
+}
+
+### Create tag submenu ###
+show_create_tag_menu() {
+    clear
+    print_header "Create Version Tag"
+    
+    ### Suggest next version based on latest tag ###
+    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+    local suggested_version=$(increment_version "$latest_tag" "patch")
+    
+    print_info "Latest tag: ${latest_tag}"
+    print_info "Suggested version: ${suggested_version}"
+    echo ""
+    
+    local version=$(ask_input "Enter version number" "$suggested_version")
+    local message=$(ask_input "Enter tag message (optional)")
+    
+    if [ -n "$version" ]; then
+        create_version_tag "$version" "$message"
+    else
+        print_error "Version number is required"
+    fi
+}
+
+### Create release submenu ###
+show_create_release_menu() {
+    clear
+    print_header "Create Release"
+    
+    ### Suggest next version ###
+    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+    local suggested_version=$(increment_version "$latest_tag" "minor")
+    
+    print_info "Latest tag: ${latest_tag}"
+    print_info "Suggested version: ${suggested_version}"
+    echo ""
+    
+    local version=$(ask_input "Enter version number" "$suggested_version")
+    local message=$(ask_input "Enter release message (optional)")
+    
+    if [ -n "$version" ]; then
+        create_release "$version" "$message"
+    else
+        print_error "Version number is required"
+    fi
+}
+
+### Validate menu choice ###
+validate_menu_choice() {
+    local choice="$1"
+    [[ "$choice" =~ ^[1-9]$|^1[0-9]$ ]]
+}
+
+
+################################################################################
+### === HELP DOCUMENTATION === ###
+################################################################################
+
+### Show comprehensive help ###
+show_help_documentation() {
+    clear
+    print_header "Git Workflow Manager - Complete Documentation"
+    
+    echo "🔧 DESCRIPTION:"
+    echo "    Complete Git repository management system with automated version"
+    echo "    control, branch management, and release workflows."
+    echo ""
+    echo "📌 USAGE:"
+    echo "    ./git.sh [OPTIONS]                       # Run with options"
+    echo "    ./git.sh                                 # Interactive menu"
+    echo "    source git.sh                           # Load functions"
+    echo ""
+    echo "🎯 KEY FEATURES:"
+    echo "    • Automatic file header version management"
+    echo "    • Git workflow automation (feature branches, releases)"
+    echo "    • Repository initialization and cloning"
+    echo "    • Remote synchronization"
+    echo "    • Branch structure setup (main/develop)"
+    echo "    • Version tagging and release management"
+    echo "    • Repository health monitoring"
+    echo "    • Batch file operations"
+    echo ""
+    echo "📚 MAIN FUNCTIONS:"
+    echo ""
+    echo "  FILE & VERSION MANAGEMENT:"
+    echo "    update_file_header <file> [msg] [type]   - Update file header"
+    echo "    commit_with_update <file> <msg> [type]   - Update and commit"
+    echo "    batch_commit <msg> [type] <files...>     - Batch update/commit"
+    echo "    get_file_version <file>                  - Get file version"
+    echo "    increment_version <version> [type]       - Increment version"
+    echo ""
+    echo "  REPOSITORY MANAGEMENT:"
+    echo "    init_git_repo [directory]                - Initialize repository"
+    echo "    clone_repository <url> [dir] [branch]    - Clone repository"
+    echo "    check_repository_health                  - Health check"
+    echo "    show_git_status                          - Detailed status"
+    echo ""
+    echo "  BRANCH MANAGEMENT:"
+    echo "    setup_branch_structure                   - Setup main/develop"
+    echo "    create_feature_branch <name>             - Create feature branch"
+    echo "    finish_feature_branch <name>             - Merge feature branch"
+    echo ""
+    echo "  RELEASE MANAGEMENT:"
+    echo "    create_version_tag <version> [message]   - Create version tag"
+    echo "    create_release <version> [message]       - Full release process"
+    echo ""
+    echo "  SYNCHRONIZATION:"
+    echo "    push_to_remote [push_tags]               - Push to remote"
+    echo "    pull_from_remote [branch]                - Pull from remote"
+    echo "    sync_with_remote [push_after]            - Full synchronization"
+    echo ""
+    echo "  STATUS & INFORMATION:"
+    echo "    show_file_status <file>                  - File version status"
+    echo "    list_project_files                       - List versioned files"
+    echo ""
+    echo "📋 COMMAND LINE OPTIONS:"
+    echo "    -h, --help                               - Show help"
+    echo "    -i, --init [directory]                   - Initialize repository"
+    echo "    -c, --clone <url> [directory] [branch]   - Clone repository" 
+    echo "    -s, --status [file]                      - Show status"
+    echo "    -u, --update <file> <msg> [type]         - Update file header"
+    echo "    -b, --batch <msg> [type] <files...>      - Batch update"
+    echo "    -f, --feature <name>                     - Create feature branch"
+    echo "    -r, --release <version> [message]        - Create release"
+    echo "    -t, --tag <version> [message]            - Create tag"
+    echo "    --push [tags]                            - Push to remote"
+    echo "    --pull [branch]                          - Pull from remote"
+    echo "    --sync                                   - Synchronize"
+    echo "    --health                                 - Health check"
+    echo "    --interactive                            - Interactive menu"
+    echo "    -v, --version                            - Show version"
+    echo ""
+    echo "🔄 VERSION INCREMENT TYPES:"
+    echo "    major     - X.0.0 (breaking changes)"
+    echo "    minor     - X.Y.0 (new features)"
+    echo "    patch     - X.Y.Z (bug fixes) [default]"
+    echo ""
+    echo "🌿 BRANCH WORKFLOW:"
+    echo "    1. setup_branch_structure                - Create main/develop"
+    echo "    2. create_feature_branch <name>          - Start new feature"
+    echo "    3. [work on feature]                     - Make changes"
+    echo "    4. commit_with_update <file> <msg>       - Update and commit"
+    echo "    5. finish_feature_branch <name>          - Merge to develop"
+    echo "    6. create_release <version>              - Create release"
+    echo ""
+    echo "🚀 EXAMPLES:"
+    echo "    $0 --init /opt/myproject                 # Initialize repository"
+    echo "    $0 --clone https://github.com/user/repo  # Clone repository"
+    echo "    $0 --update script.sh 'Fix bug' patch   # Update file header"
+    echo "    $0 --feature user-auth                   # Create feature branch"
+    echo "    $0 --release 1.2.0 'New features'       # Create release"
+    echo "    $0 --batch 'Update all' patch *.sh      # Batch update files"
+    echo "    $0 --health                              # Check repo health"
+    echo "    $0 --sync                                # Sync with remote"
+    echo "    $0 --check-updates                       # Check for updates"
+    echo "    $0 --validate                            # Validate installation"
+    echo "    $0 --summary                             # Show installation summary"
+    echo ""
+    echo "💡 INTEGRATION:"
+    echo "    • Integrates with project.conf configuration"
+    echo "    • Uses helper.sh for utility functions"
+    echo "    • Supports custom branch prefixes and naming"
+    echo "    • Automatic version detection and increment"
+    echo "    • Remote repository synchronization"
+    echo ""
+    echo "⚙️ CONFIGURATION VARIABLES (project.conf):"
+    echo "    REPO_URL                 - Remote repository URL"
+    echo "    REPO_BRANCH              - Main branch name (default: main)"
+    echo "    REPO_DEVELOP_BRANCH      - Develop branch name (default: develop)"
+    echo "    FEATURE_BRANCH_PREFIX    - Feature branch prefix (default: feature/)"
+    echo "    VERSION_PREFIX           - Version tag prefix (default: v)"
+    echo "    GIT_USER_NAME            - Git user name"
+    echo "    GIT_USER_EMAIL           - Git user email"
+    echo ""
+    
+    pause "Press Enter to continue..."
+}
+
+### Show quick help ###
+show_quick_help() {
+    echo "Git Workflow Manager v${SCRIPT_VERSION}"
+    echo "Usage: $0 [OPTIONS]"
+    echo "Try '$0 --help' for complete documentation."
+    echo "Try '$0 --interactive' for interactive menu."
+}
+
+### Show version information ###
+show_version_info() {
+    echo "Git Workflow Manager v${SCRIPT_VERSION}"
+    echo "Complete Git repository management system"
+    echo "Copyright (c) 2025 Mawage (Workflow Team)"
+    echo "License: MIT"
+}
+
+
+################################################################################
+### === MAIN EXECUTION === ###
+################################################################################
+
+### Parse command line arguments ###
+parse_arguments() {
+    ### Store original arguments for logging ###
+    local ORIGINAL_ARGS=("$@")
+    
+    ### Parse arguments ###
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help_documentation
+                exit 0
+                ;;
+            -V|--version)
+                show_version_info
+                exit 0
+                ;;
+            --interactive)
+                show_workflow_menu
+                exit 0
+                ;;
+            -i|--init)
+                shift
+                local directory="${1:-$PROJECT_ROOT}"
+                init_git_repo "$directory"
+                exit 0
+                ;;
+            -c|--clone)
+                shift
+                if [ -z "$1" ]; then
+                    print_error "Repository URL is required for clone"
+                    show_quick_help
+                    exit 1
+                fi
+                local url="$1"
+                local directory="${2:-$PROJECT_ROOT}"
+                local branch="${3:-$REPO_BRANCH}"
+                shift
+                [ -n "$1" ] && ! [[ "$1" == -* ]] && { directory="$1"; shift; }
+                [ -n "$1" ] && ! [[ "$1" == -* ]] && { branch="$1"; shift; }
+                
+                clone_repository "$url" "$directory" "$branch"
+                
+                ### Validate and show summary ###
+                if validate_installation "$directory"; then
+                    show_installation_summary "$directory"
+                fi
+                exit 0
+                ;;
+            --check-updates)
+                shift
+                local repo_dir="${1:-$PROJECT_ROOT}"
+                check_git_version "$repo_dir"
+                exit 0
+                ;;
+            --validate)
+                shift
+                local repo_dir="${1:-$PROJECT_ROOT}"
+                validate_installation "$repo_dir"
+                exit 0
+                ;;
+            --summary)
+                shift
+                local repo_dir="${1:-$PROJECT_ROOT}"
+                show_installation_summary "$repo_dir"
+                exit 0
+                ;;
+            --set-permissions)
+                shift
+                local repo_dir="${1:-$PROJECT_ROOT}"
+                if is_root; then
+                    set_repository_permissions "$repo_dir"
+                else
+                    print_error "Root privileges required for setting permissions"
+                    exit 1
+                fi
+                exit 0
+                ;;
+            -s|--status)
+                shift
+                if [ -n "$1" ] && [ ! "$1" = -* ]; then
+                    show_file_status "$1"
+                else
+                    show_git_status
+                fi
+                exit 0
+                ;;
+            -u|--update)
+                shift
+                if [ -z "$1" ] || [ -z "$2" ]; then
+                    print_error "Usage: $0 --update <file> <commit_message> [version_type]"
+                    exit 1
+                fi
+                local file="$1"
+                local message="$2"
+                local type="${3:-patch}"
+                commit_with_update "$file" "$message" "$type"
+                exit 0
+                ;;
+            -b|--batch)
+                shift
+                if [ -z "$1" ]; then
+                    print_error "Usage: $0 --batch <commit_message> [version_type] <files...>"
+                    exit 1
+                fi
+                local message="$1"
+                local type="patch"
+                shift
+                
+                ### Check if next arg is version type ###
+                if [[ "$1" =~ ^(major|minor|patch)$ ]]; then
+                    type="$1"
+                    shift
+                fi
+                
+                if [ $# -eq 0 ]; then
+                    print_error "No files specified for batch update"
+                    exit 1
+                fi
+                
+                batch_commit "$message" "$type" "$@"
+                exit 0
+                ;;
+            -f|--feature)
+                shift
+                if [ -z "$1" ]; then
+                    print_error "Feature name is required"
+                    exit 1
+                fi
+                create_feature_branch "$1"
+                exit 0
+                ;;
+            --finish-feature)
+                shift
+                if [ -z "$1" ]; then
+                    print_error "Feature name is required"
+                    exit 1
+                fi
+                finish_feature_branch "$1"
+                exit 0
+                ;;
+            -r|--release)
+                shift
+                if [ -z "$1" ]; then
+                    print_error "Version is required for release"
+                    exit 1
+                fi
+                create_release "$1" "$2"
+                exit 0
+                ;;
+            -t|--tag)
+                shift
+                if [ -z "$1" ]; then
+                    print_error "Version is required for tag"
+                    exit 1
+                fi
+                create_version_tag "$1" "$2"
+                exit 0
+                ;;
+            --push)
+                shift
+                local push_tags="${1:-false}"
+                push_to_remote "$push_tags"
+                exit 0
+                ;;
+            --pull)
+                shift
+                local branch="${1:-$(git branch --show-current 2>/dev/null)}"
+                pull_from_remote "$branch"
+                exit 0
+                ;;
+            --sync)
+                sync_with_remote
+                exit 0
+                ;;
+            --health)
+                check_repository_health
+                exit 0
+                ;;
+            --setup-branches)
+                setup_branch_structure
+                exit 0
+                ;;
+            --list-files)
+                list_project_files
+                exit 0
+                ;;
+            -*)
+                print_error "Unknown option: $1"
+                show_quick_help
+                exit 1
+                ;;
+            *)
+                print_error "Unexpected argument: $1"
+                show_quick_help
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
+### Main function ###
+main() {
+    ### Load configuration and dependencies ###
+    load_config
+    
+    ### Initialize logging ###
+    init_logging "${LOG_DIR}/git-workflow.log" "${LOG_LEVEL_INFO}"
+    
+    ### Log startup ###
+    log_info "Git Workflow Manager started with args: $*"
+    
+    ### Check if no arguments provided ###
+    if [ $# -eq 0 ]; then
+        print_header "Git Workflow Manager v${SCRIPT_VERSION}"
+        echo ""
+        echo "📋 QUICK ACTIONS:"
+        echo "  $0 --interactive         # Interactive menu"
+        echo "  $0 --help               # Complete documentation"
+        echo "  $0 --status             # Repository status"
+        echo "  $0 --health             # Health check"
+        echo ""
+        echo "🔧 COMMON OPERATIONS:"
+        echo "  $0 --update <file> <msg>          # Update file version"
+        echo "  $0 --feature <name>               # Create feature branch"
+        echo "  $0 --release <version>            # Create release"
+        echo "  $0 --sync                         # Sync with remote"
+        echo ""
+        print_info "Use --interactive for guided menu or --help for complete options"
+        exit 0
+    else
+        ### Parse and execute arguments ###
+        parse_arguments "$@"
+    fi
+}
+
+### Cleanup function ###
+cleanup() {
+    log_info "Git Workflow Manager cleanup"
+}
+
+### Initialize when run directly ###
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    ### Running directly ###
+    main "$@"
+else
+    ### Being sourced ###
+    load_config
+    print_success "Git Workflow Manager loaded. Type 'show_workflow_menu' for interactive menu."
+fi
