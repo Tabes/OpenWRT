@@ -773,7 +773,7 @@ set_permissions() {
     ################################################################################
 
     ### Set permissions for single file (internal) ###
-    # shellcheck disable=SC2317  # Function called conditionally
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
     _set_file_permissions() {
         local file="$1"
         local owner="$2"
@@ -822,7 +822,7 @@ set_permissions() {
     }
 
     ### Set permissions for directory and contents (internal) ###
-    # shellcheck disable=SC2317  # Function called conditionally
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
     _set_directory_permissions() {
         local directory="$1"
         local owner="$2"
@@ -916,7 +916,7 @@ set_permissions() {
     }
 
     ### Make shell scripts executable (internal) ###
-    # shellcheck disable=SC2317  # Function called conditionally
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
     _make_scripts_executable() {
         local directory="$1"
         local exec_perm="${2:-755}"
@@ -953,7 +953,7 @@ set_permissions() {
     }
 
     ### Make web scripts executable (internal) ###
-    # shellcheck disable=SC2317  # Function called conditionally
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
     _make_web_scripts_executable() {
         local directory="$1"
         local exec_perm="${2:-755}"
@@ -970,7 +970,6 @@ set_permissions() {
         print_info "Made web scripts executable with $exec_perm permissions"
     }
 }
-
 
 ################################################################################
 ### === FILE OPERATION FUNCTIONS === ###
