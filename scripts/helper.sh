@@ -1083,6 +1083,548 @@ find_files() {
 
 
 ################################################################################
+### === FILE HEADER MANAGEMENT FUNCTIONS === ###
+################################################################################
+
+### Unified Header Management Function ###
+header() {
+    local operation="${1:-}"
+    shift
+    
+    case "$operation" in
+        --update|-u)
+            _header_update "$@"
+            ;;
+        --get-version|-g)
+            _header_get_version "$@"
+            ;;
+        --validate|-v)
+            _header_validate "$@"
+            ;;
+        --create|-c)
+            _header_create "$@"
+            ;;
+        --check)
+            _header_check "$@"
+            ;;
+        --increment-version|-i)
+            _header_increment_version "$@"
+            ;;
+        --compare-version)
+            _header_compare_version "$@"
+            ;;
+        --batch-update|-b)
+            _header_batch_update "$@"
+            ;;
+        --show|-s)
+            _header_show "$@"
+            ;;
+        --help|-h)
+            _header_help
+            ;;
+        *)
+            print_error "Unknown header operation: ${operation:-none}"
+            _header_help
+            return 1
+            ;;
+    esac
+    
+    ################################################################################
+    ### === INTERNAL HEADER FUNCTIONS === ###
+    ################################################################################
+    
+    ### Update file header with new version (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_update() {
+        local file="$1"
+        local commit_message="${2:-Auto update}"
+        local increment_type="${3:-patch}"
+        
+        ### Validate file ###
+        if ! validate_file "$file" true; then
+            return 1
+        fi
+        
+        ### Backup file ###
+        backup_file "$file"
+        
+        ### Get current version ###
+        local current_version=$(_header_get_version "$file")
+        local new_version=$(_header_increment_version "$current_version" "$increment_type")
+        local current_date=$(date +%Y-%m-%d)
+        
+        print_info "Updating header in: $(basename "$file")"
+        print_info "Version: $current_version → $new_version"
+        
+        ### Create temporary file ###
+        local temp_file=$(create_temp_file "header_update" ".tmp")
+        
+        ### Update header using AWK ###
+        awk -v new_version="$new_version" \
+            -v new_date="$current_date" \
+            -v new_commit="$commit_message" '
+        BEGIN { 
+            in_header = 0
+            header_done = 0
+        }
+        
+        ### Start of header ###
+        /^#{80}$/ && !header_done {
+            if (in_header == 0) {
+                in_header = 1
+                print $0
+            } else {
+                in_header = 0
+                header_done = 1
+                print $0
+            }
+            next
+        }
+        
+        ### Inside header - update specific lines ###
+        in_header == 1 {
+            if (/^### Version:/) {
+                print "### Version: " new_version
+            } else if (/^### Date:/) {
+                print "### Date:    " new_date
+            } else {
+                print $0
+            }
+            next
+        }
+        
+        ### Update SCRIPT_VERSION variable ###
+        /^SCRIPT_VERSION=/ && header_done {
+            print "SCRIPT_VERSION=\"" new_version "\""
+            next
+        }
+        
+        ### Update COMMIT variable ###
+        /^COMMIT=/ && header_done {
+            print "COMMIT=\"" new_commit "\""
+            next
+        }
+        
+        ### All other lines ###
+        { print $0 }
+        ' "$file" > "$temp_file"
+        
+        ### Replace original file ###
+        if safe_move "$temp_file" "$file"; then
+            print_success "Header updated successfully"
+            echo "$new_version"  ### Return new version ###
+            return 0
+        else
+            print_error "Failed to update header"
+            return 1
+        fi
+    }
+    
+    ### Get version from file header (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_get_version() {
+        local file="$1"
+        local silent="${2:-false}"
+        
+        if ! validate_file "$file" false; then
+            [ "$silent" != "true" ] && print_error "File not found: $file"
+            echo "0.0.0"
+            return 1
+        fi
+        
+        ### First try SCRIPT_VERSION variable ###
+        local script_version=$(grep "^SCRIPT_VERSION=" "$file" 2>/dev/null | head -1 | cut -d'"' -f2)
+        
+        if [ -n "$script_version" ] && [ "$script_version" != "" ]; then
+            echo "$script_version"
+            return 0
+        fi
+        
+        ### Fallback to header comment ###
+        local header_version=$(grep "^### Version:" "$file" 2>/dev/null | head -1 | sed 's/.*Version: *//' | tr -d ' ')
+        
+        if [ -n "$header_version" ] && [ "$header_version" != "" ]; then
+            echo "$header_version"
+            return 0
+        fi
+        
+        ### No version found ###
+        [ "$silent" != "true" ] && print_warning "No version found in: $(basename "$file")"
+        echo "0.0.0"
+        return 1
+    }
+    
+    ### Validate header format (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_validate() {
+        local file="$1"
+        local verbose="${2:-false}"
+        
+        if ! validate_file "$file" false; then
+            print_error "File not found: $file"
+            return 1
+        fi
+        
+        local issues=0
+        local has_header=false
+        local has_version=false
+        local has_date=false
+        local has_script_version=false
+        local has_commit=false
+        
+        ### Check for header block ###
+        if grep -q "^#{80}$" "$file"; then
+            has_header=true
+            [ "$verbose" = "true" ] && print_check "Header block found"
+        else
+            [ "$verbose" = "true" ] && print_cross "Header block missing"
+            ((issues++))
+        fi
+        
+        ### Check for version in header ###
+        if grep -q "^### Version:" "$file"; then
+            has_version=true
+            [ "$verbose" = "true" ] && print_check "Version line found"
+        else
+            [ "$verbose" = "true" ] && print_cross "Version line missing"
+            ((issues++))
+        fi
+        
+        ### Check for date in header ###
+        if grep -q "^### Date:" "$file"; then
+            has_date=true
+            [ "$verbose" = "true" ] && print_check "Date line found"
+        else
+            [ "$verbose" = "true" ] && print_cross "Date line missing"
+            ((issues++))
+        fi
+        
+        ### Check for SCRIPT_VERSION variable ###
+        if grep -q "^SCRIPT_VERSION=" "$file"; then
+            has_script_version=true
+            [ "$verbose" = "true" ] && print_check "SCRIPT_VERSION variable found"
+        else
+            [ "$verbose" = "true" ] && print_cross "SCRIPT_VERSION variable missing"
+            ((issues++))
+        fi
+        
+        ### Check for COMMIT variable ###
+        if grep -q "^COMMIT=" "$file"; then
+            has_commit=true
+            [ "$verbose" = "true" ] && print_check "COMMIT variable found"
+        else
+            [ "$verbose" = "true" ] && print_cross "COMMIT variable missing"
+            ((issues++))
+        fi
+        
+        if [ $issues -eq 0 ]; then
+            [ "$verbose" = "true" ] && print_success "Header validation passed"
+            return 0
+        else
+            [ "$verbose" = "true" ] && print_error "Header validation failed: $issues issues"
+            return 1
+        fi
+    }
+    
+    ### Create new header for file (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_create() {
+        local file="$1"
+        local project_name="${2:-Project}"
+        local description="${3:-Script description}"
+        local author="${4:-Author}"
+        local version="${5:-1.0.0}"
+        
+        print_info "Creating header for: $(basename "$file")"
+        
+        ### Create header content ###
+        local header_content="#!/bin/bash
+################################################################################
+### $project_name - $description
+### $(echo "$description" | fold -s -w 76 | sed '2,$s/^/### /')
+################################################################################
+### Project: $project_name
+### Version: $version
+### Author:  $author
+### Date:    $(date +%Y-%m-%d)
+### License: MIT
+### Usage:   $(basename "$file") [OPTIONS]
+################################################################################
+
+SCRIPT_VERSION=\"$version\"
+COMMIT=\"Initial version\"
+
+################################################################################
+"
+        
+        if [ -f "$file" ]; then
+            ### File exists - prepend header ###
+            backup_file "$file"
+            
+            ### Check if file already has shebang ###
+            if head -1 "$file" | grep -q "^#!/"; then
+                ### Remove existing shebang ###
+                local temp_file=$(create_temp_file "header_create" ".tmp")
+                tail -n +2 "$file" > "$temp_file"
+                echo "$header_content" | cat - "$temp_file" > "$file"
+                rm -f "$temp_file"
+            else
+                ### No shebang - just prepend ###
+                echo "$header_content" | cat - "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+            fi
+            
+            print_success "Header added to existing file"
+        else
+            ### New file - create with header ###
+            echo "$header_content" > "$file"
+            chmod +x "$file"
+            print_success "Created new file with header"
+        fi
+        
+        return 0
+    }
+    
+    ### Check if header exists and is complete (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_check() {
+        local file="$1"
+        
+        if ! validate_file "$file" false; then
+            echo "FILE_NOT_FOUND"
+            return 1
+        fi
+        
+        ### Quick check for header markers ###
+        if ! grep -q "^#{80}$" "$file"; then
+            echo "NO_HEADER"
+            return 1
+        fi
+        
+        ### Validate header ###
+        if _header_validate "$file" false; then
+            echo "VALID"
+            return 0
+        else
+            echo "INCOMPLETE"
+            return 1
+        fi
+    }
+    
+    ### Increment version number (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_increment_version() {
+        local current_version="$1"
+        local increment_type="${2:-patch}"
+        
+        ### Validate version format ###
+        if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "1.0.0"
+            return 0
+        fi
+        
+        local major=$(echo "$current_version" | cut -d. -f1)
+        local minor=$(echo "$current_version" | cut -d. -f2)
+        local patch=$(echo "$current_version" | cut -d. -f3)
+        
+        case "$increment_type" in
+            major)
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+            minor)
+                minor=$((minor + 1))
+                patch=0
+                ;;
+            patch|*)
+                patch=$((patch + 1))
+                ;;
+        esac
+        
+        echo "$major.$minor.$patch"
+    }
+    
+    ### Compare two versions (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_compare_version() {
+        local version1="$1"
+        local version2="$2"
+        
+        ### Validate formats ###
+        if [[ ! "$version1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+           [[ ! "$version2" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            print_error "Invalid version format"
+            return 2
+        fi
+        
+        ### Split versions ###
+        IFS='.' read -r major1 minor1 patch1 <<< "$version1"
+        IFS='.' read -r major2 minor2 patch2 <<< "$version2"
+        
+        ### Compare major ###
+        if [ "$major1" -gt "$major2" ]; then
+            echo "1"  ### version1 is newer ###
+        elif [ "$major1" -lt "$major2" ]; then
+            echo "-1" ### version2 is newer ###
+        ### Compare minor ###
+        elif [ "$minor1" -gt "$minor2" ]; then
+            echo "1"
+        elif [ "$minor1" -lt "$minor2" ]; then
+            echo "-1"
+        ### Compare patch ###
+        elif [ "$patch1" -gt "$patch2" ]; then
+            echo "1"
+        elif [ "$patch1" -lt "$patch2" ]; then
+            echo "-1"
+        else
+            echo "0"  ### versions are equal ###
+        fi
+    }
+    
+    ### Batch update multiple files (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_batch_update() {
+        local commit_message="$1"
+        local increment_type="${2:-patch}"
+        shift 2
+        local files=("$@")
+        
+        if [ ${#files[@]} -eq 0 ]; then
+            print_error "No files specified for batch update"
+            return 1
+        fi
+        
+        print_header "Batch Header Update: ${#files[@]} files"
+        
+        local updated_files=()
+        local failed_files=()
+        
+        ### Update each file ###
+        for file in "${files[@]}"; do
+            print_step $((${#updated_files[@]} + ${#failed_files[@]} + 1)) "Processing: $(basename "$file")"
+            
+            if _header_update "$file" "$commit_message" "$increment_type" >/dev/null; then
+                updated_files+=("$file")
+                local version=$(_header_get_version "$file" true)
+                print_success "Updated to v$version"
+            else
+                failed_files+=("$file")
+                print_error "Failed to update"
+            fi
+        done
+        
+        ### Summary ###
+        echo ""
+        if [ ${#updated_files[@]} -gt 0 ]; then
+            print_success "Successfully updated: ${#updated_files[@]} files"
+        fi
+        
+        if [ ${#failed_files[@]} -gt 0 ]; then
+            print_warning "Failed to update: ${#failed_files[@]} files"
+            return 1
+        fi
+        
+        return 0
+    }
+    
+    ### Show header information (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_show() {
+        local file="$1"
+        
+        if ! validate_file "$file" false; then
+            print_error "File not found: $file"
+            return 1
+        fi
+        
+        print_header "Header Information: $(basename "$file")"
+        
+        ### Get header information ###
+        local version=$(_header_get_version "$file" true)
+        local has_header=$(_header_check "$file")
+        
+        print_section "Header Status"
+        echo "  Status:  $has_header"
+        echo "  Version: $version"
+        
+        ### Extract header details if present ###
+        if [ "$has_header" = "VALID" ]; then
+            local project=$(grep "^### Project:" "$file" 2>/dev/null | sed 's/### Project: *//')
+            local author=$(grep "^### Author:" "$file" 2>/dev/null | sed 's/### Author: *//')
+            local date=$(grep "^### Date:" "$file" 2>/dev/null | sed 's/### Date: *//')
+            local commit=$(grep "^COMMIT=" "$file" 2>/dev/null | cut -d'"' -f2)
+            
+            print_section "Header Details"
+            [ -n "$project" ] && echo "  Project: $project"
+            [ -n "$author" ] && echo "  Author:  $author"
+            [ -n "$date" ] && echo "  Date:    $date"
+            [ -n "$commit" ] && echo "  Commit:  $commit"
+        fi
+        
+        ### Validation details ###
+        print_section "Validation"
+        _header_validate "$file" true
+        
+        return 0
+    }
+    
+    ### Show help for header function (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _header_help() {
+        cat << EOF
+
+USAGE: header [OPERATION] [OPTIONS]
+
+OPERATIONS:
+    --update, -u <file> [message] [type]
+        Update file header with new version
+        Types: major, minor, patch (default: patch)
+        
+    --get-version, -g <file> [silent]
+        Get version from file header
+        
+    --validate, -v <file> [verbose]
+        Validate header format
+        
+    --create, -c <file> [project] [description] [author] [version]
+        Create new header for file
+        
+    --check <file>
+        Check if header exists (returns: VALID/INCOMPLETE/NO_HEADER/FILE_NOT_FOUND)
+        
+    --increment-version, -i <version> [type]
+        Increment version number (major/minor/patch)
+        
+    --compare-version <version1> <version2>
+        Compare two versions (returns: 1/0/-1)
+        
+    --batch-update, -b <message> [type] <files...>
+        Update multiple files at once
+        
+    --show, -s <file>
+        Show header information
+        
+    --help, -h
+        Show this help message
+
+EXAMPLES:
+    header --update script.sh "Fixed bug" patch
+    header --get-version script.sh
+    header --validate script.sh true
+    header --create new.sh "MyProject" "Script description" "John Doe" "1.0.0"
+    header --batch-update "Security update" patch *.sh
+    header --show script.sh
+
+EOF
+        return 0
+    }
+}
+
+### Export the main function for use in subshells ###
+export -f header
+
+
+################################################################################
 ### === PACKAGE MANAGEMENT FUNCTIONS === ###
 ################################################################################
 
