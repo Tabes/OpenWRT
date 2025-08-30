@@ -350,220 +350,10 @@ show_installation_summary() {
 
 
 ################################################################################
-### === VERSION MANAGEMENT === ###
-################################################################################
-
-### Extract version from file ###
-get_file_version() {
-    local file="$1"
-    
-    if ! validate_file "$file" false; then
-        echo "0.0.0"
-        return 1
-    fi
-    
-    ### First try SCRIPT_VERSION variable ###
-    local script_version=$(grep "^SCRIPT_VERSION=" "$file" | head -1 | cut -d'"' -f2)
-    
-    if [ -n "$script_version" ] && [ "$script_version" != "" ]; then
-        echo "$script_version"
-    else
-        ### Fallback to header comment ###
-        grep "^### Version:" "$file" | head -1 | sed 's/.*Version: *//' || echo "0.0.0"
-    fi
-}
-
-### Increment version number ###
-increment_version() {
-    local current_version="$1"
-    local increment_type="${2:-patch}"
-    
-    if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "1.0.0"
-        return 0
-    fi
-    
-    local major=$(echo "$current_version" | cut -d. -f1)
-    local minor=$(echo "$current_version" | cut -d. -f2)
-    local patch=$(echo "$current_version" | cut -d. -f3)
-    
-    case "$increment_type" in
-        major)
-            major=$((major + 1))
-            minor=0
-            patch=0
-            ;;
-        minor)
-            minor=$((minor + 1))
-            patch=0
-            ;;
-        patch|*)
-            patch=$((patch + 1))
-            ;;
-    esac
-    
-    echo "$major.$minor.$patch"
-}
-
-### Get next version based on git history ###
-get_next_version() {
-    local file="$1"
-    local increment_type="${2:-patch}"
-    
-    ### Get current version from file ###
-    local current_version=$(get_file_version "$file")
-    
-    ### Get latest tag version if available ###
-    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
-    
-    ### Use higher version as base ###
-    if [ -n "$latest_tag" ] && [ "$latest_tag" != "$current_version" ]; then
-        print_info "Using tag version $latest_tag as base"
-        current_version="$latest_tag"
-    fi
-    
-    increment_version "$current_version" "$increment_type"
-}
-
-
-################################################################################
-### === FILE HEADER MANAGEMENT === ###
-################################################################################
-
-### Update file header with new version ###
-update_file_header() {
-    local file="$1"
-    local commit_message="${2:-Auto update}"
-    local increment_type="${3:-patch}"
-    
-    validate_file "$file" true
-    
-    ### Backup file ###
-    backup_file "$file"
-    
-    ### Get versions ###
-    local current_version=$(get_file_version "$file")
-    local new_version=$(increment_version "$current_version" "$increment_type")
-    local current_date=$(date +%Y-%m-%d)
-    
-    print_info "Updating $file: v$current_version → v$new_version"
-    
-    ### Create temporary file ###
-    local temp_file=$(create_temp_file "header_update" ".tmp")
-    
-    ### Update header using AWK ###
-    awk -v new_version="$new_version" -v new_date="$current_date" -v new_commit="$commit_message" '
-    BEGIN { in_header = 0; header_done = 0 }
-    
-    # Start of header
-    /^################################################################################$/ && !header_done {
-        if (in_header == 0) {
-            in_header = 1
-            print $0
-        } else {
-            in_header = 0
-            header_done = 1
-            print $0
-        }
-        next
-    }
-    
-    # Inside header - update specific lines
-    in_header == 1 {
-        if (/^### Version:/) {
-            print "### Version: " new_version
-        } else if (/^### Date:/) {
-            print "### Date:    " new_date
-        } else {
-            print $0
-        }
-        next
-    }
-    
-    # Update SCRIPT_VERSION variable
-    /^SCRIPT_VERSION=/ && header_done {
-        print "SCRIPT_VERSION=\"" new_version "\""
-        next
-    }
-    
-    # Update COMMIT variable
-    /^COMMIT=/ && header_done {
-        print "COMMIT=\"" new_commit "\""
-        next
-    }
-    
-    # All other lines
-    { print $0 }
-    ' "$file" > "$temp_file"
-    
-    ### Replace original file ###
-    if safe_move "$temp_file" "$file"; then
-        print_success "Updated $file to version $new_version"
-        echo "  Previous: $current_version"
-        echo "  Current:  $new_version" 
-        echo "  Date:     $current_date"
-        echo "  Message:  $commit_message"
-        return 0
-    else
-        error_exit "Failed to update $file"
-    fi
-}
-
-### Update multiple files ###
-update_multiple_files() {
-    local commit_message="$1"
-    local increment_type="${2:-patch}"
-    shift 2
-    local files=("$@")
-    
-    if [ ${#files[@]} -eq 0 ]; then
-        print_error "No files specified for update"
-        return 1
-    fi
-    
-    print_header "Batch Update: ${#files[@]} files"
-    
-    local updated_files=()
-    local failed_files=()
-    
-    ### Update each file ###
-    for file in "${files[@]}"; do
-        print_step $((${#updated_files[@]} + ${#failed_files[@]} + 1)) "Processing $file"
-        
-        if update_file_header "$file" "$commit_message" "$increment_type"; then
-            updated_files+=("$file")
-        else
-            failed_files+=("$file")
-            print_error "Failed to update: $file"
-        fi
-    done
-    
-    ### Report results ###
-    echo ""
-    if [ ${#updated_files[@]} -gt 0 ]; then
-        print_success "Successfully updated ${#updated_files[@]} files"
-        for file in "${updated_files[@]}"; do
-            local version=$(get_file_version "$file")
-            print_check "$(basename "$file") v$version"
-        done
-    fi
-    
-    if [ ${#failed_files[@]} -gt 0 ]; then
-        print_warning "Failed to update ${#failed_files[@]} files:"
-        for file in "${failed_files[@]}"; do
-            print_cross "$(basename "$file")"
-        done
-    fi
-    
-    echo "$updated_files"  ### Return updated files list ###
-}
-
-
-################################################################################
 ### === GIT COMMIT OPERATIONS === ###
 ################################################################################
 
-### Commit file with updated header ###
+### Commit File with updated Header ###
 commit_with_update() {
     local file="$1"
     local commit_message="$2"
@@ -577,8 +367,8 @@ commit_with_update() {
     
     print_header "Commit with Header Update"
     
-    ### Update header first ###
-    if ! update_file_header "$file" "$commit_message" "$increment_type"; then
+    ### Update header using helper function ###
+    if ! header --update "$file" "$commit_message" "$increment_type" >/dev/null; then
         error_exit "Header update failed"
     fi
     
@@ -594,7 +384,7 @@ commit_with_update() {
     git add "$file" || error_exit "Failed to stage file"
     
     if git commit -m "$actual_commit_message"; then
-        local new_version=$(get_file_version "$file")
+        local new_version=$(header --get-version "$file")
         print_success "Committed $(basename "$file") v$new_version"
         print_info "Message: $actual_commit_message"
         return 0
@@ -617,9 +407,18 @@ batch_commit() {
     
     print_header "Batch Commit: ${#files[@]} files"
     
-    ### Update all files first ###
-    local updated_files_str=$(update_multiple_files "$commit_message" "$increment_type" "${files[@]}")
-    local updated_files=($updated_files_str)
+    ### Update all files using helper function ###
+    if ! header --batch-update "$commit_message" "$increment_type" "${files[@]}"; then
+        print_warning "Some files failed to update"
+    fi
+    
+    ### Get successfully updated files ###
+    local updated_files=()
+    for file in "${files[@]}"; do
+        if git diff --name-only "$file" 2>/dev/null | grep -q "$file"; then
+            updated_files+=("$file")
+        fi
+    done
     
     if [ ${#updated_files[@]} -eq 0 ]; then
         print_warning "No files were updated"
@@ -634,7 +433,7 @@ batch_commit() {
         print_success "Batch commit successful: ${#updated_files[@]} files"
         
         for file in "${updated_files[@]}"; do
-            local version=$(get_file_version "$file")
+            local version=$(header --get-version "$file")
             print_check "$(basename "$file") v$version"
         done
         
@@ -643,7 +442,6 @@ batch_commit() {
         error_exit "Batch commit failed"
     fi
 }
-
 
 ################################################################################
 ### === BRANCH MANAGEMENT === ###
@@ -983,7 +781,7 @@ sync_with_remote() {
 ### === STATUS AND INFORMATION === ###
 ################################################################################
 
-### Show file version status ###
+### Show File Version Status ###
 show_file_status() {
     local file="$1"
     
@@ -991,8 +789,8 @@ show_file_status() {
     
     print_header "File Status: $(basename "$file")"
     
-    ### Version information ###
-    local version=$(get_file_version "$file")
+    ### Version information using helper function ###
+    local version=$(header --get-version "$file")
     local commit_msg=""
     
     if grep -q "^COMMIT=" "$file"; then
@@ -1020,7 +818,7 @@ show_file_status() {
     fi
 }
 
-### List all project files with versions ###
+### List all Project Files with Versions ###
 list_project_files() {
     print_header "Project Files with Versions"
     
@@ -1035,9 +833,9 @@ list_project_files() {
     print_info "Found ${#files[@]} versioned files:"
     echo ""
     
-    ### Display files with versions ###
+    ### Display files with versions using helper function ###
     for file in "${files[@]}"; do
-        local version=$(get_file_version "$file")
+        local version=$(header --get-version "$file")
         local relative_path="${file#$PWD/}"
         printf "  %-30s v%s\n" "$(basename "$file")" "$version"
     done
@@ -1217,279 +1015,368 @@ show_git_status() {
 
 
 ################################################################################
-### === INTERACTIVE MENUS === ###
+### === UNIFIED MENU SYSTEM === ###
 ################################################################################
 
-### Main interactive workflow menu ###
-show_workflow_menu() {
-    clear
-    print_header "Git Workflow Manager - Interactive Menu"
+### Unified Menu Function with parameter-based Navigation ###
+show_menu() {
+    local menu_type="${1:-main}"
+    shift
     
-    echo "📋 AVAILABLE ACTIONS:"
-    echo ""
-    echo "  === FILE & VERSION MANAGEMENT ==="
-    echo "   1) Update file header with version bump"
-    echo "   2) Commit file with header update"
-    echo "   3) Batch update multiple files"
-    echo "   4) Show file version status"
-    echo "   5) List all project files"
-    echo ""
-    echo "  === REPOSITORY MANAGEMENT ==="
-    echo "   6) Initialize git repository"
-    echo "   7) Clone remote repository"
-    echo "   8) Show git repository status"
-    echo "   9) Repository health check"
-    echo ""
-    echo "  === BRANCH MANAGEMENT ==="
-    echo "  10) Setup branch structure (main/develop)"
-    echo "  11) Create feature branch"
-    echo "  12) Finish feature branch"
-    echo ""
-    echo "  === RELEASE MANAGEMENT ==="
-    echo "  13) Create version tag"
-    echo "  14) Create full release"
-    echo ""
-    echo "  === SYNCHRONIZATION ==="
-    echo "  15) Push to remote repository"
-    echo "  16) Pull from remote repository"
-    echo "  17) Full sync with remote"
-    echo ""
-    echo "  === HELP & EXIT ==="
-    echo "  18) Show detailed help"
-    echo "  19) Exit"
-    echo ""
-    
-    local choice=$(ask_input "Enter your choice" "1" "validate_menu_choice")
-    
-    case $choice in
-        1) show_update_header_menu ;;
-        2) show_commit_update_menu ;;
-        3) show_batch_update_menu ;;
-        4) show_file_status_menu ;;
-        5) list_project_files ;;
-        6) show_init_repo_menu ;;
-        7) show_clone_repo_menu ;;
-        8) show_git_status ;;
-        9) check_repository_health ;;
-        10) setup_branch_structure ;;
-        11) show_create_feature_menu ;;
-        12) show_finish_feature_menu ;;
-        13) show_create_tag_menu ;;
-        14) show_create_release_menu ;;
-        15) push_to_remote ;;
-        16) pull_from_remote ;;
-        17) sync_with_remote ;;
-        18) show_help_documentation ;;
-        19) print_info "Exiting Git Workflow Manager..."; exit 0 ;;
-        *) 
-            print_error "Invalid choice. Please select 1-19."
-            pause "Press Enter to continue..."
-            show_workflow_menu
+    case "$menu_type" in
+        --main|main)
+            _show_main_menu
+            ;;
+        --update-header)
+            _show_update_header_menu
+            ;;
+        --commit-update)
+            _show_commit_update_menu
+            ;;
+        --batch-update)
+            _show_batch_update_menu
+            ;;
+        --file-status)
+            _show_file_status_menu "$@"
+            ;;
+        --init-repo)
+            _show_init_repo_menu
+            ;;
+        --clone-repo)
+            _show_clone_repo_menu
+            ;;
+        --create-feature)
+            _show_create_feature_menu
+            ;;
+        --finish-feature)
+            _show_finish_feature_menu
+            ;;
+        --create-tag)
+            _show_create_tag_menu
+            ;;
+        --create-release)
+            _show_create_release_menu
+            ;;
+        --help|-h)
+            show_help_documentation
+            show_menu --main
+            ;;
+        *)
+            print_error "Unknown menu type: $menu_type"
+            print_info "Usage: show_menu [--main|--update-header|--commit-update|--batch-update|"
+            print_info "                  --file-status|--init-repo|--clone-repo|--create-feature|"
+            print_info "                  --finish-feature|--create-tag|--create-release|--help]"
+            return 1
             ;;
     esac
-    
-    ### Return to menu after action ###
-    echo ""
-    pause "Press Enter to continue..."
-    show_workflow_menu
-}
 
-### Update header submenu ###
-show_update_header_menu() {
-    clear
-    print_header "Update File Header"
-    
-    local file=$(ask_input "Enter file path")
-    local commit_msg=$(ask_input "Enter commit message" "Auto update")
-    local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
-    
-    if validate_file "$file" false; then
-        update_file_header "$file" "$commit_msg" "$version_type"
-    else
-        print_error "File not found: $file"
-    fi
-}
+    ################################################################################
+    ### === INTERNAL MENU FUNCTIONS === ###
+    ################################################################################
 
-### Commit with update submenu ###
-show_commit_update_menu() {
-    clear
-    print_header "Commit with Header Update"
-    
-    local file=$(ask_input "Enter file path")
-    local commit_msg=$(ask_input "Enter commit message")
-    local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
-    
-    if [ -n "$file" ] && [ -n "$commit_msg" ]; then
-        commit_with_update "$file" "$commit_msg" "$version_type"
-    else
-        print_error "File path and commit message are required"
-    fi
-}
-
-### Batch update submenu ###
-show_batch_update_menu() {
-    clear
-    print_header "Batch Update Files"
-    
-    local commit_msg=$(ask_input "Enter commit message")
-    local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
-    local files_input=$(ask_input "Enter file paths (space-separated)")
-    
-    if [ -n "$commit_msg" ] && [ -n "$files_input" ]; then
-        local files=($files_input)
-        batch_commit "$commit_msg" "$version_type" "${files[@]}"
-    else
-        print_error "Commit message and file paths are required"
-    fi
-}
-
-### File status submenu ###
-show_file_status_menu() {
-    clear
-    print_header "Show File Status"
-    
-    local file=$(ask_input "Enter file path")
-    
-    if [ -n "$file" ]; then
-        show_file_status "$file"
-    else
-        print_error "File path is required"
-    fi
-}
-
-### Initialize repository submenu ###
-show_init_repo_menu() {
-    clear
-    print_header "Initialize Git Repository"
-    
-    local repo_dir=$(ask_input "Enter repository directory" "$PROJECT_ROOT")
-    
-    if [ -n "$repo_dir" ]; then
-        init_git_repo "$repo_dir"
-    fi
-}
-
-### Clone repository submenu ###
-show_clone_repo_menu() {
-    clear
-    print_header "Clone Remote Repository"
-    
-    ### Check if directory already exists ###
-    if [ -d "$PROJECT_ROOT" ]; then
-        local dir_status=$(check_target_directory "$PROJECT_ROOT")
-        print_info "Current directory status: $dir_status"
-        echo ""
-    fi
-    
-    local repo_url=$(ask_input "Enter repository URL" "$REPO_URL")
-    local target_dir=$(ask_input "Enter target directory" "$PROJECT_ROOT")
-    local branch=$(ask_input "Enter branch name" "$REPO_BRANCH")
-    
-    if [ -n "$repo_url" ] && [ -n "$target_dir" ]; then
-        clone_repository "$repo_url" "$target_dir" "$branch"
+    ### Main interactive menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_main_menu() {
+        clear
+        print_header "Git Workflow Manager - Interactive Menu"
         
-        ### Show summary after successful clone ###
-        if [ $? -eq 0 ]; then
-            echo ""
-            show_installation_summary "$target_dir"
+        echo "📋 AVAILABLE ACTIONS:"
+        echo ""
+        echo "  === FILE & VERSION MANAGEMENT ==="
+        echo "   1) Update file header with version bump"
+        echo "   2) Commit file with header update"
+        echo "   3) Batch update multiple files"
+        echo "   4) Show file version status"
+        echo "   5) List all project files"
+        echo ""
+        echo "  === REPOSITORY MANAGEMENT ==="
+        echo "   6) Initialize git repository"
+        echo "   7) Clone remote repository"
+        echo "   8) Show git repository status"
+        echo "   9) Repository health check"
+        echo ""
+        echo "  === BRANCH MANAGEMENT ==="
+        echo "  10) Setup branch structure (main/develop)"
+        echo "  11) Create feature branch"
+        echo "  12) Finish feature branch"
+        echo ""
+        echo "  === RELEASE MANAGEMENT ==="
+        echo "  13) Create version tag"
+        echo "  14) Create full release"
+        echo ""
+        echo "  === SYNCHRONIZATION ==="
+        echo "  15) Push to remote repository"
+        echo "  16) Pull from remote repository"
+        echo "  17) Full sync with remote"
+        echo ""
+        echo "  === HELP & EXIT ==="
+        echo "  18) Show detailed help"
+        echo "  19) Exit"
+        echo ""
+        
+        read -p "Enter your choice [1-19]: " choice
+        
+        case $choice in
+            1) show_menu --update-header ;;
+            2) show_menu --commit-update ;;
+            3) show_menu --batch-update ;;
+            4) show_menu --file-status ;;
+            5) list_project_files; pause; show_menu --main ;;
+            6) show_menu --init-repo ;;
+            7) show_menu --clone-repo ;;
+            8) show_git_status; pause; show_menu --main ;;
+            9) check_repository_health; pause; show_menu --main ;;
+            10) setup_branch_structure; pause; show_menu --main ;;
+            11) show_menu --create-feature ;;
+            12) show_menu --finish-feature ;;
+            13) show_menu --create-tag ;;
+            14) show_menu --create-release ;;
+            15) push_to_remote; pause; show_menu --main ;;
+            16) pull_from_remote; pause; show_menu --main ;;
+            17) sync_with_remote; pause; show_menu --main ;;
+            18) show_help_documentation; show_menu --main ;;
+            19) print_info "Exiting Git Workflow Manager..."; exit 0 ;;
+            *)
+                print_error "Invalid choice. Please select 1-19."
+                pause
+                show_menu --main
+                ;;
+        esac
+    }
+
+    ### Update header menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_update_header_menu() {
+        clear
+        print_header "Update File Header"
+        
+        local file=$(ask_input "Enter file path")
+        local commit_msg=$(ask_input "Enter commit message" "Auto update")
+        local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
+        
+        if validate_file "$file" false; then
+            header --update "$file" "$commit_msg" "$version_type"
+        else
+            print_error "File not found: $file"
         fi
-    else
-        print_error "Repository URL and target directory are required"
-    fi
-}
+        
+        pause
+        show_menu --main
+    }
 
-### Create feature branch submenu ###
-show_create_feature_menu() {
-    clear
-    print_header "Create Feature Branch"
-    
-    local feature_name=$(ask_input "Enter feature name (e.g., user-authentication)")
-    
-    if [ -n "$feature_name" ]; then
-        create_feature_branch "$feature_name"
-    else
-        print_error "Feature name is required"
-    fi
-}
+    ### Commit with update menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_commit_update_menu() {
+        clear
+        print_header "Commit with Header Update"
+        
+        local file=$(ask_input "Enter file path")
+        local commit_msg=$(ask_input "Enter commit message")
+        local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
+        
+        if [ -n "$file" ] && [ -n "$commit_msg" ]; then
+            commit_with_update "$file" "$commit_msg" "$version_type"
+        else
+            print_error "File path and commit message are required"
+        fi
+        
+        pause
+        show_menu --main
+    }
 
-### Finish feature branch submenu ###
-show_finish_feature_menu() {
-    clear
-    print_header "Finish Feature Branch"
-    
-    ### Show current feature branches ###
-    local feature_branches=($(git branch | grep "${FEATURE_BRANCH_PREFIX:-feature/}" | sed 's/^[* ] //' | sed "s/${FEATURE_BRANCH_PREFIX:-feature\/}//"))
-    
-    if [ ${#feature_branches[@]} -eq 0 ]; then
-        print_warning "No feature branches found"
-        return 1
-    fi
-    
-    print_info "Available feature branches:"
-    for branch in "${feature_branches[@]}"; do
-        echo "  • $branch"
-    done
-    echo ""
-    
-    local feature_name=$(ask_input "Enter feature name to finish")
-    
-    if [ -n "$feature_name" ]; then
-        finish_feature_branch "$feature_name"
-    else
-        print_error "Feature name is required"
-    fi
-}
+    ### Batch update menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_batch_update_menu() {
+        clear
+        print_header "Batch Update Files"
+        
+        local commit_msg=$(ask_input "Enter commit message")
+        local version_type=$(ask_input "Version increment type (major/minor/patch)" "patch")
+        local files_input=$(ask_input "Enter file paths (space-separated)")
+        
+        if [ -n "$commit_msg" ] && [ -n "$files_input" ]; then
+            local files=($files_input)
+            batch_commit "$commit_msg" "$version_type" "${files[@]}"
+        else
+            print_error "Commit message and file paths are required"
+        fi
+        
+        pause
+        show_menu --main
+    }
 
-### Create tag submenu ###
-show_create_tag_menu() {
-    clear
-    print_header "Create Version Tag"
-    
-    ### Suggest next version based on latest tag ###
-    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
-    local suggested_version=$(increment_version "$latest_tag" "patch")
-    
-    print_info "Latest tag: ${latest_tag}"
-    print_info "Suggested version: ${suggested_version}"
-    echo ""
-    
-    local version=$(ask_input "Enter version number" "$suggested_version")
-    local message=$(ask_input "Enter tag message (optional)")
-    
-    if [ -n "$version" ]; then
-        create_version_tag "$version" "$message"
-    else
-        print_error "Version number is required"
-    fi
-}
+    ### File status menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_file_status_menu() {
+        clear
+        print_header "Show File Status"
+        
+        local file="${1:-$(ask_input "Enter file path")}"
+        
+        if [ -n "$file" ]; then
+            show_file_status "$file"
+        else
+            print_error "File path is required"
+        fi
+        
+        pause
+        show_menu --main
+    }
 
-### Create release submenu ###
-show_create_release_menu() {
-    clear
-    print_header "Create Release"
-    
-    ### Suggest next version ###
-    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
-    local suggested_version=$(increment_version "$latest_tag" "minor")
-    
-    print_info "Latest tag: ${latest_tag}"
-    print_info "Suggested version: ${suggested_version}"
-    echo ""
-    
-    local version=$(ask_input "Enter version number" "$suggested_version")
-    local message=$(ask_input "Enter release message (optional)")
-    
-    if [ -n "$version" ]; then
-        create_release "$version" "$message"
-    else
-        print_error "Version number is required"
-    fi
-}
+    ### Initialize repository menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_init_repo_menu() {
+        clear
+        print_header "Initialize Git Repository"
+        
+        local repo_dir=$(ask_input "Enter repository directory" "$PROJECT_ROOT")
+        
+        if [ -n "$repo_dir" ]; then
+            init_git_repo "$repo_dir"
+        fi
+        
+        pause
+        show_menu --main
+    }
 
-### Validate menu choice ###
-validate_menu_choice() {
-    local choice="$1"
-    [[ "$choice" =~ ^[1-9]$|^1[0-9]$ ]]
+    ### Clone repository menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_clone_repo_menu() {
+        clear
+        print_header "Clone Remote Repository"
+        
+        ### Check if directory already exists ###
+        if [ -d "$PROJECT_ROOT" ]; then
+            local dir_status=$(check_target_directory "$PROJECT_ROOT")
+            print_info "Current directory status: $dir_status"
+            echo ""
+        fi
+        
+        local repo_url=$(ask_input "Enter repository URL" "$REPO_URL")
+        local target_dir=$(ask_input "Enter target directory" "$PROJECT_ROOT")
+        local branch=$(ask_input "Enter branch name" "$REPO_BRANCH")
+        
+        if [ -n "$repo_url" ] && [ -n "$target_dir" ]; then
+            clone_repository "$repo_url" "$target_dir" "$branch"
+            
+            ### Show summary after successful clone ###
+            if [ $? -eq 0 ]; then
+                echo ""
+                show_installation_summary "$target_dir"
+            fi
+        else
+            print_error "Repository URL and target directory are required"
+        fi
+        
+        pause
+        show_menu --main
+    }
+
+    ### Create feature branch menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_create_feature_menu() {
+        clear
+        print_header "Create Feature Branch"
+        
+        local feature_name=$(ask_input "Enter feature name (e.g., user-authentication)")
+        
+        if [ -n "$feature_name" ]; then
+            create_feature_branch "$feature_name"
+        else
+            print_error "Feature name is required"
+        fi
+        
+        pause
+        show_menu --main
+    }
+
+    ### Finish feature branch menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_finish_feature_menu() {
+        clear
+        print_header "Finish Feature Branch"
+        
+        ### Show current feature branches ###
+        local feature_branches=($(git branch 2>/dev/null | grep "${FEATURE_BRANCH_PREFIX:-feature/}" | sed 's/^[* ] //' | sed "s/${FEATURE_BRANCH_PREFIX:-feature\/}//"))
+        
+        if [ ${#feature_branches[@]} -eq 0 ]; then
+            print_warning "No feature branches found"
+            pause
+            show_menu --main
+            return
+        fi
+        
+        print_info "Available feature branches:"
+        for branch in "${feature_branches[@]}"; do
+            echo "  • $branch"
+        done
+        echo ""
+        
+        local feature_name=$(ask_input "Enter feature name to finish")
+        
+        if [ -n "$feature_name" ]; then
+            finish_feature_branch "$feature_name"
+        else
+            print_error "Feature name is required"
+        fi
+        
+        pause
+        show_menu --main
+    }
+
+    ### Create tag menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_create_tag_menu() {
+        clear
+        print_header "Create Version Tag"
+        
+        ### Suggest next version based on latest tag ###
+        local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        local suggested_version=$(header --increment-version "$latest_tag" "patch")
+        
+        print_info "Latest tag: ${latest_tag}"
+        print_info "Suggested version: ${suggested_version}"
+        echo ""
+        
+        local version=$(ask_input "Enter version number" "$suggested_version")
+        local message=$(ask_input "Enter tag message (optional)")
+        
+        if [ -n "$version" ]; then
+            create_version_tag "$version" "$message"
+        else
+            print_error "Version number is required"
+        fi
+        
+        pause
+        show_menu --main
+    }
+
+    ### Create release menu (internal) ###
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _show_create_release_menu() {
+        clear
+        print_header "Create Release"
+        
+        ### Suggest next version ###
+        local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        local suggested_version=$(header --increment-version "$latest_tag" "minor")
+        
+        print_info "Latest tag: ${latest_tag}"
+        print_info "Suggested version: ${suggested_version}"
+        echo ""
+        
+        local version=$(ask_input "Enter version number" "$suggested_version")
+        local message=$(ask_input "Enter release message (optional)")
+        
+        if [ -n "$version" ]; then
+            create_release "$version" "$message"
+        else
+            print_error "Version number is required"
+        fi
+        
+        pause
+        show_menu --main
+    }
 }
 
 
