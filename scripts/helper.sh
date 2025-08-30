@@ -727,7 +727,7 @@ check_target_directory() {
     return 1
 }
 
-### Set comprehensive permissions for files and directories ###
+### Set comprehensive Permissions for Files and Directories ###
 set_permissions() {
     local target="$1"
     local owner="${2:-auto}"
