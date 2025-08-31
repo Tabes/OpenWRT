@@ -176,15 +176,15 @@ main() {
    load_config
    
    ### Initialize logging ###
-   log --init "${LOG_DIR}/logfile.log" "${LOG_LEVEL_INFO}"
+   # log --init "${LOG_DIR}/logfile.log" "${LOG_LEVEL_INFO}"
    
    ### Log startup ###
-   log --info "Helper functions startup: $*"
+   # log --info "Helper functions startup: $*"
    
    ### Check if no arguments provided ###
    if [ $# -eq 0 ]; then
-       show --header "Universal Helper Functions v${SCRIPT_VERSION}"
-       show --doc --help
+       # show --header "Universal Helper Functions v${SCRIPT_VERSION}"
+       # show --doc --help
        exit 0
    else
        ### Parse and execute arguments ###
