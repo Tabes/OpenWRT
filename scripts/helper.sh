@@ -7,7 +7,7 @@
 ### Project: Universal Helper Library
 ### Version: 2.1.0
 ### Author:  Mawage (Development Team)
-### Date:    2025-01-01
+### Date:    2025-08-31
 ### License: MIT
 ### Usage:   Source this File to Load Helper Functions
 ################################################################################
@@ -52,7 +52,96 @@ load_config() {
 ### === STATUS & NOTIFICATION FUNCTIONS === ###
 ################################################################################
 
-### Placeholder for notification functions ###
+### Unified print function for all output operations ###
+print() {
+   ### Parse Arguments ###
+   while [[ $# -gt 0 ]]; do
+       case $1 in
+           --success)
+               _print_success "$2"
+               shift 2
+               ;;
+           --error)
+               _print_error "$2"
+               shift 2
+               ;;
+           --warning)
+               _print_warning "$2"
+               shift 2
+               ;;
+           --info)
+               _print_info "$2"
+               shift 2
+               ;;
+           --header)
+               _print_header "$2"
+               shift 2
+               ;;
+           --line)
+               _print_line "${2:-#}" "${3:-80}"
+               shift 3
+               ;;
+           --help|-h)
+               _print_help
+               exit 0
+               ;;
+           *)
+               shift
+               ;;
+       esac
+   done
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_success() {
+       echo -e "${GREEN}${SYMBOL_SUCCESS} $1${NC}"
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_error() {
+       echo -e "${RED}${SYMBOL_ERROR} $1${NC}" >&2
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_warning() {
+       echo -e "${YELLOW}${SYMBOL_WARNING} $1${NC}"
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_info() {
+       echo -e "${CYAN}${SYMBOL_INFO} $1${NC}"
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_header() {
+       local title="$1"
+       local line=$(printf "%80s" | tr ' ' '#')
+       echo -e "${BLUE}${line}${NC}"
+       echo -e "${BLUE}### ${title}${NC}"
+       echo -e "${BLUE}${line}${NC}"
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_line() {
+       local char="$1"
+       local width="$2"
+       local line=$(printf "%${width}s" | tr ' ' "$char")
+       echo "$line"
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_help() {
+       echo "Usage: print [OPTION] [MESSAGE]"
+       echo "Options:"
+       echo "  --success MESSAGE    Print success message"
+       echo "  --error MESSAGE      Print error message"
+       echo "  --warning MESSAGE    Print warning message"
+       echo "  --info MESSAGE       Print info message"
+       echo "  --header TITLE       Print header with title"
+       echo "  --line [CHAR] [WIDTH] Print line"
+       echo "  --help, -h           Show this help"
+   }
+}
+
 
 ################################################################################
 ### === MAIN EXECUTION === ###
