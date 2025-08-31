@@ -12,7 +12,8 @@
 ################################################################################
 
 SCRIPT_VERSION="1.0.0"
-COMMIT="PermFix - Smart Unix Permission mManagement for Project Files"
+COMMIT="PermFix - Smart Unix Permission Management for Project Files
+"
 clear
 
 
