@@ -52,168 +52,207 @@ load_config() {
 ### === STATUS & NOTIFICATION FUNCTIONS === ###
 ################################################################################
 
-### Unified Print Function for all output Operations ###
+### Unified Print function for all Output Oerations ###
 print() {
-   ### Local variables ###
-   local message=""
-   local color="${NC}"
-   local symbol=""
-   local position=""
-   local alignment="left"
-   local newlines=0
-   local operation=""
-   
-   ### Parse Arguments ###
-   while [[ $# -gt 0 ]]; do
-       case $1 in
-           --success)
-               operation="success"
-               color="${GREEN}"
-               symbol="${SYMBOL_SUCCESS}"
-               message="$2"
-               shift 2
-               ;;
-           --error)
-               operation="error"
-               color="${RED}"
-               symbol="${SYMBOL_ERROR}"
-               message="$2"
-               shift 2
-               ;;
-           --warning)
-               operation="warning"
-               color="${YELLOW}"
-               symbol="${SYMBOL_WARNING}"
-               message="$2"
-               shift 2
-               ;;
-           --info)
-               operation="info"
-               color="${CYAN}"
-               symbol="${SYMBOL_INFO}"
-               message="$2"
-               shift 2
-               ;;
-           --header)
-               operation="header"
-               message="$2"
-               shift 2
-               ;;
-           --line)
-               operation="line"
-               message="${2:-#}"
-               shift 2
-               ;;
-           --pos)
-               position="$2"
-               shift 2
-               ;;
-           --left|-l)
-               alignment="left"
-               shift
-               ;;
-           --right|-r)
-               alignment="right"
-               shift
-               ;;
-           --cr)
-               if [[ "${2}" =~ ^[0-9]+$ ]]; then
-                   newlines="$2"
-                   shift 2
-               else
-                   newlines=1
-                   shift
-               fi
-               ;;
-           --help|-h)
-               _print_help
-               return 0
-               ;;
-           *)
-               if [ -z "$message" ]; then
-                   message="$1"
-               fi
-               shift
-               ;;
-       esac
-   done
-   
-   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
-   _print_formatted() {
-       local text="$1"
-       local col_pos="${2:-1}"
-       
-       ### Handle positioning ###
-       if [ -n "$position" ]; then
-           if [[ "$position" =~ ^[0-9]+$ ]]; then
-               col_pos="$position"
-           fi
-       fi
-       
-       ### Handle alignment ###
-       if [ "$alignment" = "right" ]; then
-           local term_width=$(tput cols)
-           local text_len=${#text}
-           col_pos=$((term_width - text_len))
-       fi
-       
-       ### Move to position and print ###
-       if [ "$col_pos" -gt 1 ]; then
-           printf "%*s%s" $((col_pos - 1)) "" "$text"
-       else
-           printf "%s" "$text"
-       fi
-   }
-   
-   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
-   _print_help() {
-       echo "Usage: print [OPTION] [MESSAGE]"
-       echo "Options:"
-       echo "  --success MESSAGE    Print success message"
-       echo "  --error MESSAGE      Print error message"
-       echo "  --warning MESSAGE    Print warning message"
-       echo "  --info MESSAGE       Print info message"
-       echo "  --header TITLE       Print header with title"
-       echo "  --line [CHAR]        Print line with character"
-       echo "  --pos COLUMN         Set column position"
-       echo "  --left, -l           Left align (default)"
-       echo "  --right, -r          Right align"
-       echo "  --cr [N]             Print N newlines (default: 1)"
-       echo "  --help, -h           Show this help"
-   }
-   
-   ### Execute operation ###
-   case "$operation" in
-       success|error|warning|info)
-           local output="${symbol} ${message}"
-           echo -e "${color}$(_print_formatted "$output")${NC}"
-           ;;
-       header)
-           local line=$(printf "%80s" | tr ' ' '#')
-           echo -e "${BLUE}${line}${NC}"
-           echo -e "${BLUE}### ${message}${NC}"
-           echo -e "${BLUE}${line}${NC}"
-           ;;
-       line)
-           local line=$(printf "%80s" | tr ' ' "$message")
-           echo "$line"
-           ;;
-       *)
-           ### Plain text output ###
-           if [ -n "$message" ]; then
-               echo -e "${color}$(_print_formatted "$message")${NC}"
-           fi
-           ;;
-   esac
-   
-   ### Print newlines ###
-   if [ "$newlines" -gt 0 ]; then
-       for ((i=0; i<newlines; i++)); do
-           echo
-       done
-   fi
+    ### Local variables ###
+    local message=""
+    local color="${NC}"
+    local symbol=""
+    local position=""
+    local alignment="left"
+    local newlines=0
+    local operation=""
+    
+    ### Parse Arguments ###
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --success)
+                operation="success"
+                color="${GREEN}"
+                symbol="${SYMBOL_SUCCESS}"
+                message="$2"
+                shift 2
+                ;;
+            --error)
+                operation="error"
+                color="${RED}"
+                symbol="${SYMBOL_ERROR}"
+                message="$2"
+                shift 2
+                ;;
+            --warning)
+                operation="warning"
+                color="${YELLOW}"
+                symbol="${SYMBOL_WARNING}"
+                message="$2"
+                shift 2
+                ;;
+            --info)
+                operation="info"
+                color="${CYAN}"
+                symbol="${SYMBOL_INFO}"
+                message="$2"
+                shift 2
+                ;;
+            --header)
+                operation="header"
+                message="$2"
+                shift 2
+                ;;
+            --line)
+                operation="line"
+                message="${2:-#}"
+                shift 2
+                ;;
+            --pos)
+                position="$2"
+                shift 2
+                ;;
+            --left|-l)
+                alignment="left"
+                shift
+                ;;
+            --right|-r)
+                alignment="right"
+                shift
+                ;;
+            --cr)
+                if [[ "${2}" =~ ^[0-9]+$ ]]; then
+                    newlines="$2"
+                    shift 2
+                else
+                    newlines=1
+                    shift
+                fi
+                ;;
+            --help|-h)
+                _print_help
+                return 0
+                ;;
+            *)
+                if [ -z "$message" ]; then
+                    message="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _print_formatted() {
+        local text="$1"
+        local col_pos="${2:-1}"
+        
+        ### Handle positioning ###
+        if [ -n "$position" ]; then
+            if [[ "$position" =~ ^[0-9]+$ ]]; then
+                col_pos="$position"
+            fi
+        fi
+        
+        ### Handle alignment ###
+        if [ "$alignment" = "right" ]; then
+            local term_width=$(tput cols)
+            local text_len=${#text}
+            col_pos=$((term_width - text_len))
+        fi
+        
+        ### Move to position and print ###
+        if [ "$col_pos" -gt 1 ]; then
+            printf "%*s%s" $((col_pos - 1)) "" "$text"
+        else
+            printf "%s" "$text"
+        fi
+    }
+    
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _print_help() {
+        ### Try to load help from markdown file ###
+        local help_file="${DOCS_DIR:-./docs/help}/print.md"
+        
+        if [ -f "$help_file" ]; then
+            ### Parse markdown and display formatted ###
+            while IFS= read -r line; do
+                case "$line" in
+                    "# "*)
+                        ### Main header ###
+                        echo -e "${BLUE}${line#\# }${NC}"
+                        ;;
+                    "## "*)
+                        ### Sub header ###
+                        echo -e "${CYAN}${line#\#\# }${NC}"
+                        ;;
+                    "### "*)
+                        ### Section header ###
+                        echo -e "${GREEN}${line#\#\#\# }${NC}"
+                        ;;
+                    "- "*)
+                        ### List item ###
+                        echo "  ${line}"
+                        ;;
+                    "\`"*"\`"*)
+                        ### Code inline ###
+                        echo -e "${YELLOW}${line}${NC}"
+                        ;;
+                    "")
+                        ### Empty line ###
+                        echo
+                        ;;
+                    *)
+                        ### Regular text ###
+                        echo "$line"
+                        ;;
+                esac
+            done < "$help_file"
+        else
+            ### Fallback to inline help ###
+            echo "Usage: print [OPTION] [MESSAGE]"
+            echo "Options:"
+            echo "  --success MESSAGE    Print success message"
+            echo "  --error MESSAGE      Print error message"
+            echo "  --warning MESSAGE    Print warning message"
+            echo "  --info MESSAGE       Print info message"
+            echo "  --header TITLE       Print header with title"
+            echo "  --line [CHAR]        Print line with character"
+            echo "  --pos COLUMN         Set column position"
+            echo "  --left, -l           Left align (default)"
+            echo "  --right, -r          Right align"
+            echo "  --cr [N]             Print N newlines (default: 1)"
+            echo "  --help, -h           Show this help"
+        fi
+    }
+    
+    ### Execute operation ###
+    case "$operation" in
+        success|error|warning|info)
+            local output="${symbol} ${message}"
+            echo -e "${color}$(_print_formatted "$output")${NC}"
+            ;;
+        header)
+            local line=$(printf "%80s" | tr ' ' '#')
+            echo -e "${BLUE}${line}${NC}"
+            echo -e "${BLUE}### ${message}${NC}"
+            echo -e "${BLUE}${line}${NC}"
+            ;;
+        line)
+            local line=$(printf "%80s" | tr ' ' "$message")
+            echo "$line"
+            ;;
+        *)
+            ### Plain text output ###
+            if [ -n "$message" ]; then
+                echo -e "${color}$(_print_formatted "$message")${NC}"
+            fi
+            ;;
+    esac
+    
+    ### Print newlines ###
+    if [ "$newlines" -gt 0 ]; then
+        for ((i=0; i<newlines; i++)); do
+            echo
+        done
+    fi
 }
-
 
 ################################################################################
 ### === MAIN EXECUTION === ###
