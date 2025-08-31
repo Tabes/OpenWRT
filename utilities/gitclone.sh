@@ -1542,7 +1542,7 @@ parse_arguments() {
                 exit 0
                 ;;
             --interactive)
-                show_workflow_menu
+                show_menu --main
                 exit 0
                 ;;
             -i|--init)
@@ -1773,5 +1773,5 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 else
     ### Being sourced ###
     load_config
-    print_success "Git Workflow Manager loaded. Type 'show_workflow_menu' for interactive menu."
+    print_success "Git Workflow Manager loaded. Type 'show_menu' for interactive Menu."
 fi
