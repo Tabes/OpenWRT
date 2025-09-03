@@ -848,8 +848,8 @@ main() {
     
     ### Check if no arguments provided ###
     if [ $# -eq 0 ]; then
-        # show --header "Universal Helper Functions v${SCRIPT_VERSION}"
-        # show --doc --help
+        show --header "Universal Helper Functions v${SCRIPT_VERSION}"
+        show --doc --help
         exit 0
     else
         ### Parse and execute arguments ###
