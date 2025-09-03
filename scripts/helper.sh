@@ -696,9 +696,9 @@ show() {
             done < "$help_file"
         else
             ### Fallback to inline help ###
-            local P1="${POS[0]}"  # Position 4
-            local P2="${POS[2]}"  # Position 21
-            local P3="${POS[3]}"  # Position 35
+            local P1="${POS[0]}:-4"  # Position 4
+            local P2="${POS[2]}:-21"  # Position 21
+            local P3="${POS[3]}:-35"  # Position 35
             
             print "Usage: show [OPERATION] [OPTIONS]"
             print --cr
