@@ -790,29 +790,29 @@ parse_arguments() {
 
 ### Main function ###
 main() {
-   ### Load configuration and dependencies ###
-   load_config
-   
-   ### Initialize logging ###
-   # log --init "${LOG_DIR}/logfile.log" "${LOG_LEVEL_INFO}"
-   
-   ### Log startup ###
-   # log --info "Helper functions startup: $*"
-   
-   ### Check if no arguments provided ###
-   if [ $# -eq 0 ]; then
-       # show --header "Universal Helper Functions v${SCRIPT_VERSION}"
-       # show --doc --help
-       exit 0
-   else
-       ### Parse and execute arguments ###
-       parse_arguments "$@"
-   fi
+    ### Load configuration and dependencies ###
+    load_config
+    
+    ### Initialize logging ###
+    log --init "${LOG_DIR}/${PROJECT_NAME}.log" "${LOG_LEVEL_INFO}"
+    
+    ### Log startup ###
+    log --info "Helper Functions startup: $*"
+    
+    ### Check if no arguments provided ###
+    if [ $# -eq 0 ]; then
+        # show --header "Universal Helper Functions v${SCRIPT_VERSION}"
+        # show --doc --help
+        exit 0
+    else
+        ### Parse and execute arguments ###
+        parse_arguments "$@"
+    fi
 }
 
 ### Cleanup function ###
 cleanup() {
-   # log --info "Helper functions cleanup"
+    log --info "Helper Functions cleanup"
 }
 
 ### Initialize when run directly ###
