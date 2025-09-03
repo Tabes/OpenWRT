@@ -703,12 +703,12 @@ show() {
             print "Usage: show [OPERATION] [OPTIONS]"
             print --cr
             print "Operations:"
-            print -l "$P1" "--menu TITLE OPTS..." -l "$P3" "Display interactive menu"
-            print -l "$P1" "--spinner PID [DELAY]" -l "$P3" "Show progress spinner"
-            print -l "$P1" "--progress CUR TOTAL" -l "$P3" "Show progress bar"
-            print -l "$P1" "--version" -l "$P3" "Show version information"
-            print -l "$P1" "--doc FILE" -l "$P3" "Display documentation file"
-            print -l "$P1" "--help, -h" -l "$P3" "Show this help"
+            print -l "$P1" "--menu TITLE OPTS..." -l "$P3" "Display interactive menu" -cr
+            print -l "$P1" "--spinner PID [DELAY]" -l "$P3" "Show progress spinner" -cr
+            print -l "$P1" "--progress CUR TOTAL" -l "$P3" "Show progress bar" -cr
+            print -l "$P1" "--version" -l "$P3" "Show version information" -cr
+            print -l "$P1" "--doc FILE" -l "$P3" "Display documentation file" -cr
+            print -l "$P1" "--help, -h" -l "$P3" "Show this help" -cr
         fi
    }
    
