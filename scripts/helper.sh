@@ -841,7 +841,7 @@ main() {
     load_config
     
     ### Initialize logging ###
-    log --init "${LOG_DIR}/${PROJECT_NAME}.log" "${LOG_LEVEL_INFO}"
+    log --init "${LOG_DIR}/${PROJECT_NAME}.log" "${LOG_LEVEL:-INFO}"
     
     ### Log startup ###
     log --info "Helper Functions startup: $*"
