@@ -603,6 +603,14 @@ show() {
    local options=()
    local selected=0
    
+   ### Define position variables globally for all subfunctions ###
+   local P1="${POS[0]:-4}"    # Position 4
+   local P2="${POS[1]:-8}"    # Position 8 
+   local P3="${POS[2]:-21}"   # Position 21
+   local P4="${POS[3]:-35}"   # Position 35
+   local P5="${POS[4]:-47}"   # Position 47
+   local P6="${POS[5]:-62}"   # Position 62
+   
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
    _show_menu() {
        local menu_title="$1"
@@ -617,14 +625,15 @@ show() {
        ### Display options ###
        local i=1
        for option in "${menu_options[@]}"; do
-           print -l 3 "[$i]" -l 8 "$option"
+           print -l "$P1" "[$i]" -l "$P2" "$option"
            ((i++))
        done
-       print -l 3 "[0]" -l 8 "Exit"
+       print -l "$P1" "[0]" -l "$P2" "Exit"
        print --cr
        
        ### Get user choice ###
-       read -p "Please select [0-$((i-1))]: " choice
+       print -n -l "$P1" "Please select [0-$((i-1))]: "
+       read choice
        echo "$choice"
    }
    
@@ -667,58 +676,62 @@ show() {
        ### Try to load help from markdown file ###
        local help_file="${DOCS_DIR}/help/show.md"
        
-        if [ -f "$help_file" ]; then
-            ### Parse markdown and display formatted ###
-            while IFS= read -r line; do
-                case "$line" in
-                    "# "*)
-                        printf "${BU}${line#\# }${NC}\n"
-                        ;;
-                    "## "*)
-                        printf "${CY}${line#\#\# }${NC}\n"
-                        ;;
-                    "### "*)
-                        printf "${GN}${line#\#\#\# }${NC}\n"
-                        ;;
-                    "- "*)
-                        printf "  ${line}\n"
-                        ;;
-                    "\`"*"\`"*)
-                        printf "${YE}${line}${NC}\n"
-                        ;;
-                    "")
-                        printf "\n"
-                        ;;
-                    *)
-                        printf "${line}\n"
-                        ;;
-                esac
-            done < "$help_file"
-        else
-            ### Fallback to inline help ###
-            local P1="${POS[0]}:-4"  # Position 4
-            local P2="${POS[2]}:-21"  # Position 21
-            local P3="${POS[3]}:-35"  # Position 35
-            
-            print "Usage: show [OPERATION] [OPTIONS]"
-            print --cr
-            print "Operations:"
-            print -l "$P1" "--menu TITLE OPTS..." -l "$P3" "Display interactive menu" -cr
-            print -l "$P1" "--spinner PID [DELAY]" -l "$P3" "Show progress spinner" -cr
-            print -l "$P1" "--progress CUR TOTAL" -l "$P3" "Show progress bar" -cr
-            print -l "$P1" "--version" -l "$P3" "Show version information" -cr
-            print -l "$P1" "--doc FILE" -l "$P3" "Display documentation file" -cr
-            print -l "$P1" "--help, -h" -l "$P3" "Show this help" -cr
-        fi
+       if [ -f "$help_file" ]; then
+           ### Parse markdown and display formatted ###
+           while IFS= read -r line; do
+               case "$line" in
+                   "# "*)
+                       print BU "${line#\# }"
+                       ;;
+                   "## "*)
+                       print CY "${line#\#\# }"
+                       ;;
+                   "### "*)
+                       print GN "${line#\#\#\# }"
+                       ;;
+                   "- "*)
+                       print -l "$P1" "•" -l "$P2" "${line#- }"
+                       ;;
+                   "\`"*"\`"*)
+                       print YE "$line"
+                       ;;
+                   "")
+                       print --cr
+                       ;;
+                   *)
+                       print "$line"
+                       ;;
+               esac
+           done < "$help_file"
+       else
+           ### Fallback to inline help ###
+           print "Usage: show [OPERATION] [OPTIONS]"
+           print --cr
+           print "Operations:"
+           print -l "$P1" "--menu TITLE OPTS..." -l "$P4" "Display interactive menu"
+           print -l "$P1" "--spinner PID [DELAY]" -l "$P4" "Show progress spinner"
+           print -l "$P1" "--progress CUR TOTAL" -l "$P4" "Show progress bar"
+           print -l "$P1" "--version" -l "$P4" "Show version information"
+           print -l "$P1" "--doc FILE" -l "$P4" "Display documentation file"
+           print -l "$P1" "--help, -h" -l "$P4" "Show this help"
+           print --cr
+           print "Examples:"
+           print -l "$P1" "show --menu \"Main Menu\" \"Option 1\" \"Option 2\""
+           print -l "$P1" "show --version"
+           print -l "$P1" "show --progress 50 100 \"Processing\""
+       fi
    }
    
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
    _show_version() {
        print --header "Universal Helper Functions"
-       print -l 3 "Version:" -l 20 "$SCRIPT_VERSION"
-       print -l 3 "Commit:" -l 20 "$COMMIT"
-       print -l 3 "Author:" -l 20 "Mawage (Development Team)"
-       print -l 3 "License:" -l 20 "MIT"
+       print -l "$P1" "Version:" -l "$P3" "$SCRIPT_VERSION"
+       print -l "$P1" "Commit:" -l "$P3" "$COMMIT"
+       print -l "$P1" "Author:" -l "$P3" "Mawage (Development Team)"
+       print -l "$P1" "License:" -l "$P3" "MIT"
+       print --cr
+       print -l "$P1" "Project:" -l "$P3" "${PROJECT_NAME:-Universal Helper Library}"
+       print -l "$P1" "Path:" -l "$P3" "${PROJECT_ROOT:-/opt/openWRT}"
    }
    
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
@@ -744,12 +757,26 @@ show() {
                    "### "*)
                        print GN "${line#\#\#\# }"
                        ;;
+                   "#### "*)
+                       print YE -l "$P1" "${line#\#\#\#\# }"
+                       ;;
                    "- "*)
-                       print -l 3 "•" -l 6 "${line#- }"
+                       print -l "$P1" "•" -l "$P2" "${line#- }"
+                       ;;
+                   "  - "*)
+                       print -l "$P2" "◦" -l "$P3" "${line#  - }"
                        ;;
                    "\`\`\`"*)
                        ### Code block start/end ###
                        print YE "$line"
+                       ;;
+                   "    "*)
+                       ### Indented code ###
+                       print -l "$P2" MG "${line}"
+                       ;;
+                   ">"*)
+                       ### Quote ###
+                       print -l "$P1" CY "│" -l "$P2" "${line#> }"
                        ;;
                    "")
                        print --cr
@@ -780,11 +807,11 @@ show() {
                ;;
            --spinner)
                _show_spinner "$2" "${3:-0.1}"
-               shift 3
+               shift $#
                ;;
            --progress)
                _show_progress "$2" "$3" "${4:-Progress}" "${5:-50}"
-               shift 5
+               shift $#
                ;;
            --version)
                _show_version
