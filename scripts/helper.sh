@@ -603,14 +603,6 @@ show() {
    local options=()
    local selected=0
    
-   ### Define position variables globally for all subfunctions ###
-   local P1="${POS[0]:-4}"    # Position 4
-   local P2="${POS[1]:-8}"    # Position 8 
-   local P3="${POS[2]:-21}"   # Position 21
-   local P4="${POS[3]:-35}"   # Position 35
-   local P5="${POS[4]:-47}"   # Position 47
-   local P6="${POS[5]:-62}"   # Position 62
-   
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
    _show_menu() {
        local menu_title="$1"
@@ -624,6 +616,9 @@ show() {
        
        ### Display options ###
        local i=1
+       local P1="${POS[0]:-4}"
+       local P2="${POS[1]:-8}"
+       
        for option in "${menu_options[@]}"; do
            print -l "$P1" "[$i]" -l "$P2" "$option"
            ((i++))
@@ -632,8 +627,7 @@ show() {
        print --cr
        
        ### Get user choice ###
-       print -n -l "$P1" "Please select [0-$((i-1))]: "
-       read choice
+       read -p "Please select [0-$((i-1))]: " choice
        echo "$choice"
    }
    
@@ -678,6 +672,9 @@ show() {
        
        if [ -f "$help_file" ]; then
            ### Parse markdown and display formatted ###
+           local P1="${POS[0]:-4}"
+           local P2="${POS[1]:-8}"
+           
            while IFS= read -r line; do
                case "$line" in
                    "# "*)
@@ -705,33 +702,32 @@ show() {
            done < "$help_file"
        else
            ### Fallback to inline help ###
+           local P1="${POS[0]:-4}"
+           local P2="${POS[3]:-35}"
+           
            print "Usage: show [OPERATION] [OPTIONS]"
            print --cr
            print "Operations:"
-           print -l "$P1" "--menu TITLE OPTS..." -l "$P4" "Display interactive menu"
-           print -l "$P1" "--spinner PID [DELAY]" -l "$P4" "Show progress spinner"
-           print -l "$P1" "--progress CUR TOTAL" -l "$P4" "Show progress bar"
-           print -l "$P1" "--version" -l "$P4" "Show version information"
-           print -l "$P1" "--doc FILE" -l "$P4" "Display documentation file"
-           print -l "$P1" "--help, -h" -l "$P4" "Show this help"
-           print --cr
-           print "Examples:"
-           print -l "$P1" "show --menu \"Main Menu\" \"Option 1\" \"Option 2\""
-           print -l "$P1" "show --version"
-           print -l "$P1" "show --progress 50 100 \"Processing\""
+           print -l "$P1" "--menu TITLE OPTS..." -l "$P2" "Display interactive menu"
+           print -l "$P1" "--spinner PID [DELAY]" -l "$P2" "Show progress spinner"
+           print -l "$P1" "--progress CUR TOTAL" -l "$P2" "Show progress bar"
+           print -l "$P1" "--version" -l "$P2" "Show version information"
+           print -l "$P1" "--doc FILE" -l "$P2" "Display documentation file"
+           print -l "$P1" "--help, -h" -l "$P2" "Show this help"
        fi
    }
    
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
    _show_version() {
+       ### Position variables for output ###
+       local P1="${POS[0]:-4}"
+       local P2="${POS[2]:-21}"
+       
        print --header "Universal Helper Functions"
-       print -l "$P1" "Version:" -l "$P3" "$SCRIPT_VERSION"
-       print -l "$P1" "Commit:" -l "$P3" "$COMMIT"
-       print -l "$P1" "Author:" -l "$P3" "Mawage (Development Team)"
-       print -l "$P1" "License:" -l "$P3" "MIT"
-       print --cr
-       print -l "$P1" "Project:" -l "$P3" "${PROJECT_NAME:-Universal Helper Library}"
-       print -l "$P1" "Path:" -l "$P3" "${PROJECT_ROOT:-/opt/openWRT}"
+       print -l "$P1" "Version:" -l "$P2" "$SCRIPT_VERSION"
+       print -l "$P1" "Commit:" -l "$P2" "$COMMIT"
+       print -l "$P1" "Author:" -l "$P2" "Mawage (Development Team)"
+       print -l "$P1" "License:" -l "$P2" "MIT"
    }
    
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
@@ -745,6 +741,10 @@ show() {
        
        if [ -f "$doc_file" ]; then
            ### Display file with formatting ###
+           local P1="${POS[0]:-4}"
+           local P2="${POS[1]:-8}"
+           local P3="${POS[2]:-21}"
+           
            while IFS= read -r line; do
                case "$line" in
                    "# "*)
@@ -757,9 +757,6 @@ show() {
                    "### "*)
                        print GN "${line#\#\#\# }"
                        ;;
-                   "#### "*)
-                       print YE -l "$P1" "${line#\#\#\#\# }"
-                       ;;
                    "- "*)
                        print -l "$P1" "•" -l "$P2" "${line#- }"
                        ;;
@@ -769,14 +766,6 @@ show() {
                    "\`\`\`"*)
                        ### Code block start/end ###
                        print YE "$line"
-                       ;;
-                   "    "*)
-                       ### Indented code ###
-                       print -l "$P2" MG "${line}"
-                       ;;
-                   ">"*)
-                       ### Quote ###
-                       print -l "$P1" CY "│" -l "$P2" "${line#> }"
                        ;;
                    "")
                        print --cr
