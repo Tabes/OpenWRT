@@ -19,12 +19,12 @@ Unified Output Function for formatted Console Output with Colors, Positioning, a
 - MG - Magenta
 
 ### Positioning
-- -l POS - Left align at position
-- -r POS - Right align at position
+- -l POS                - Left align at position
+- -r POS                - Right align at position
 
 ### Line Control
-- --cr [N] - Print N newlines (default: 1)
-- --no-nl, -n - Suppress automatic newline
+- --cr [N]              - Print N newlines (default: 1)
+- --no-nl, -n           - Suppress automatic newline
 
 ### Special Operations
 - --success MESSAGE     - Print success message with green checkmark
@@ -35,7 +35,7 @@ Unified Output Function for formatted Console Output with Colors, Positioning, a
 - --line [CHAR]         - Print horizontal line (default: #)
 
 ### Help
-- --help, -h - Show this help message
+- --help, -h            - Show this help message
 
 
 ## Examples
