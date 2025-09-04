@@ -263,6 +263,11 @@ print() {
                ;;
        esac
    done
+
+       ### Add Standard Newline unless suppressed or already handled ###
+    if [ "$has_output" = "true" ] && [ "$suppress_newline" = "false" ] && [ "$newlines" -eq 0 ]; then
+        printf "\n"
+    fi
 }
 
 ### Unified log Function for all Logging Operations ###
