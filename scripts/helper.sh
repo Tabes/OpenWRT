@@ -593,7 +593,7 @@ log() {
                 shift $#
                 ;;
             --help|-h)
-                _log_help
+                show_help "log"
                 return 0
                 ;;
             *)
@@ -729,58 +729,6 @@ show() {
    }
    
    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
-   _show_help() {
-       ### Try to load help from markdown file ###
-       local help_file="${DOCS_DIR}/help/show.md"
-       
-       if [ -f "$help_file" ]; then
-           ### Parse markdown and display formatted ###
-           local P1="${POS[0]:-4}"
-           local P2="${POS[1]:-8}"
-           
-           while IFS= read -r line; do
-               case "$line" in
-                   "# "*)
-                       print BU "${line#\# }"
-                       ;;
-                   "## "*)
-                       print CY "${line#\#\# }"
-                       ;;
-                   "### "*)
-                       print GN "${line#\#\#\# }"
-                       ;;
-                   "- "*)
-                       print -l "$P1" "•" -l "$P2" "${line#- }"
-                       ;;
-                   "\`"*"\`"*)
-                       print YE "$line"
-                       ;;
-                   "")
-                       print --cr
-                       ;;
-                   *)
-                       print "$line"
-                       ;;
-               esac
-           done < "$help_file"
-       else
-           ### Fallback to Inline Help ###
-           local P1="${POS[0]:-4}"
-           local P2="${POS[3]:-35}"
-           
-           print "Usage: show [OPERATION] [OPTIONS]"
-           print --cr
-           print "Operations:"
-           print -l "$P1" "--menu TITLE OPTS..." -l "$P2" "Display interactive menu"
-           print -l "$P1" "--spinner PID [DELAY]" -l "$P2" "Show progress spinner"
-           print -l "$P1" "--progress CUR TOTAL" -l "$P2" "Show progress bar"
-           print -l "$P1" "--version" -l "$P2" "Show version information"
-           print -l "$P1" "--doc FILE" -l "$P2" "Display documentation file"
-           print -l "$P1" "--help, -h" -l "$P2" "Show this help"
-       fi
-   }
-   
-   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
    _show_version() {
        ### Position variables for output ###
        local P1="${POS[0]:-4}"
@@ -874,7 +822,7 @@ show() {
                shift 2
                ;;
            --help|-h)
-               _show_help
+               show_help "menu"
                return 0
                ;;
            *)
