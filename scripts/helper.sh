@@ -138,67 +138,51 @@ print() {
        fi
    }
    
-   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
-   _print_help() {
-       ### Try to load help from markdown file ###
-       local help_file="${DOCS_DIR}/help/print.md"
-       
-       if [ -f "$help_file" ]; then
-           ### Parse markdown and display formatted ###
-           while IFS= read -r line; do
-               case "$line" in
-                   "# "*)
-                       echo -e "${BU}${line#\# }${NC}"
-                       ;;
-                   "## "*)
-                       echo -e "${CY}${line#\#\# }${NC}"
-                       ;;
-                   "### "*)
-                       echo -e "${GN}${line#\#\#\# }${NC}"
-                       ;;
-                   "- "*)
-                       echo "  ${line}"
-                       ;;
-                   "\`"*"\`"*)
-                       echo -e "${YE}${line}${NC}"
-                       ;;
-                   "")
-                       echo
-                       ;;
-                   *)
-                       echo "$line"
-                       ;;
-               esac
-           done < "$help_file"
-       else
-           ### Fallback to Inline Help ###
-           local P1="${POS[0]:-4}"
-           local P2="${POS[3]:-35}"
-           
-           print "Usage: show [OPERATION] [OPTIONS]"
-           print --cr
-           print "Operations:"
+    # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+    _print_help() {
+        ### Try to load Help from MarkDown File ###
+        local help_file="${DOCS_DIR}/help/print.md"
+        
+        if [ -f "$help_file" ]; then
+            ### Parse markdown and display formatted ###
+            local P1="${POS[0]:-4}"
+            local P2="${POS[1]:-8}"
+            
+            while IFS= read -r line; do
+                case "$line" in
+                    "# "*)
+                        printf "${BU}${line#\# }${NC}\n"
+                        ;;
+                    "## "*)
+                        printf "${CY}${line#\#\# }${NC}\n"
+                        ;;
+                    "### "*)
+                        printf "${GN}${line#\#\#\# }${NC}\n"
+                        ;;
+                    "- "*)
+                        printf "\033[${P1}G•\033[${P2}G${line#- }\n"
+                        ;;
+                    "\`"*"\`"*)
+                        printf "${YE}${line}${NC}\n"
+                        ;;
+                    "")
+                        printf "\n"
+                        ;;
+                    *)
+                        printf "${line}\n"
+                        ;;
+                esac
+            done < "$help_file"
+        else
+            ### Fallback error message ###
+            printf "${RD}Error: Help documentation not found${NC}\n" >&2
+            printf "Expected location: ${help_file}\n" >&2
+            printf "Please ensure the documentation is properly installed.\n" >&2
+            return 1
+        fi
+    }
 
-           ### Fallback to inline help ###
-           printf "Usage: print [OPTIONS] [TEXT]...\n\n"
-           printf "Options:\n"
-           printf "\033[3G%-15s\033[20G%s\n" "COLOR" "Set color (NC, RD, GN, YE, BU, CY, WH, MG)"
-           printf "\033[3G%-15s\033[20G%s\n" "-r POS" "Right align at position"
-           printf "\033[3G%-15s\033[20G%s\n" "-l POS" "Left align at position"
-           printf "\033[3G%-15s\033[20G%s\n" "--cr [N]" "Print N newlines (default: 1)"
-           printf "\033[3G%-15s\033[20G%s\n" "--no-nl, -n" "Suppress automatic newline"
-           printf "\033[3G%-15s\033[20G%s\n" "--help, -h" "Show this help"
-           printf "\nSpecial operations:\n"
-           printf "\033[3G%-20s\033[25G%s\n" "--success MESSAGE" "Print success message"
-           printf "\033[3G%-20s\033[25G%s\n" "--error MESSAGE" "Print error message"
-           printf "\033[3G%-20s\033[25G%s\n" "--warning MESSAGE" "Print warning message"
-           printf "\033[3G%-20s\033[25G%s\n" "--info MESSAGE" "Print info message"
-           printf "\033[3G%-20s\033[25G%s\n" "--header TITLE" "Print header"
-           printf "\033[3G%-20s\033[25G%s\n" "--line [CHAR]" "Print line"
-       fi
-   }
-   
-   ### Parse and execute arguments sequentially ###
+   ### Parse and Execute Arguments sequentially ###
    while [[ $# -gt 0 ]]; do
        case $1 in
            ### Special operations ###
@@ -625,6 +609,53 @@ log() {
 ################################################################################
 ### === INTERACTIVE DISPLAY FUNCTIONS === ###
 ################################################################################
+
+### Universal Help Function for all Functions ###
+show_help() {
+    local func_name="${1}"
+    local help_file="${HELP_FILE_DIR}/${func_name}.md"
+    
+    if [ -f "$help_file" ]; then
+        ### Parse markdown and display formatted ###
+        local P1="${POS[0]:-4}"
+        local P2="${POS[1]:-8}"
+        local P3="${POS[3]:-35}"
+        
+        while IFS= read -r line; do
+            case "$line" in
+                "# "*)
+                    print --header "${line#\# }"
+                    ;;
+                "## "*)
+                    print CY "${line#\#\# }"
+                    ;;
+                "### "*)
+                    print GN "${line#\#\#\# }"
+                    ;;
+                "- "*)
+                    print -l "$P1" "•" -l "$P2" "${line#- }"
+                    ;;
+                "  - "*)
+                    print -l "$P2" "◦" -l "$P3" "${line#  - }"
+                    ;;
+                "\`\`\`"*)
+                    print YE "$line"
+                    ;;
+                "")
+                    print --cr
+                    ;;
+                *)
+                    print "$line"
+                    ;;
+            esac
+        done < "$help_file"
+    else
+        ### Fallback error message ###
+        print --error "Help documentation for '${func_name}' not found"
+        print "Expected location: ${help_file}"
+        return 1
+    fi
+}
 
 ### Unified show function for interactive displays and menus ###
 show() {
