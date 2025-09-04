@@ -611,8 +611,13 @@ log() {
 ################################################################################
 
 ### Universal Help Function for all Functions ###
+################################################################################
+### === HELP SYSTEM === ###
+################################################################################
+
+### Universal Help Function for all Functions ###
 show_help() {
-    local func_name="${1}"
+    local func_name="${1:-${FUNCNAME[1]}}"  # Auto-detect Caller if not provided
     local help_file="${HELP_FILE_DIR}/${func_name}.md"
     
     if [ -f "$help_file" ]; then
@@ -653,11 +658,12 @@ show_help() {
         ### Fallback error message ###
         print --error "Help documentation for '${func_name}' not found"
         print "Expected location: ${help_file}"
+        print "Try: ls -la ${HELP_FILE_DIR}/"
         return 1
     fi
 }
 
-### Unified show function for interactive displays and menus ###
+### Unified Show Function for interactive Displays and Menus ###
 show() {
    ### Local variables ###
    local operation=""
