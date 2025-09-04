@@ -107,136 +107,194 @@ readonly SYMBOL_INFO="${SYMBOL_INFO:-ℹ}"
 
 ### Unified print Function for all Output Operations ###
 print() {
-    ### Local variables ###
-    local output_buffer=""
-    local current_color="${NC}"
-    local current_alignment="left"
-    local current_position=""
-    local newlines=0
-    local suppress_newline=false
-    local has_output=false
-    
-    # shellcheck disable=SC2317,SC2329
-    _print_apply_formatting() {
-        local text="$1"
-        local pos="$2"
-        local align="$3"
-        
-        ### Calculate position based on alignment ###
-        if [ "$align" = "right" ] && [ -n "$pos" ]; then
-            ### Right align: position is where the last character should be ###
-            local text_len=${#text}
-            local start_pos=$((pos - text_len + 1))
-            [ $start_pos -lt 1 ] && start_pos=1
-            printf "\033[${start_pos}G%s" "$text"
-        elif [ "$align" = "left" ] && [ -n "$pos" ]; then
-            ### Left align: position is where the first character should be ###
-            printf "\033[${pos}G%s" "$text"
-        else
-            ### No positioning, just print ###
-            printf "%s" "$text"
-        fi
-    }
-    
-    # ... _print_help bleibt gleich ...
-    
-    ### Parse and execute arguments sequentially ###
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            ### Special operations (haben eigene Newlines) ###
-            --success)
-                printf "${GN}${SYMBOL_SUCCESS} $2${NC}\n"
-                has_output=true
-                suppress_newline=true  # Schon Newline dabei
-                shift 2
-                ;;
-            --error)
-                printf "${RD}${SYMBOL_ERROR} $2${NC}\n" >&2
-                has_output=true
-                suppress_newline=true
-                shift 2
-                ;;
-            --warning)
-                printf "${YE}${SYMBOL_WARNING} $2${NC}\n"
-                has_output=true
-                suppress_newline=true
-                shift 2
-                ;;
-            --info)
-                printf "${CY}${SYMBOL_INFO} $2${NC}\n"
-                has_output=true
-                suppress_newline=true
-                shift 2
-                ;;
-            --header)
-                local line=$(printf "%80s" | tr ' ' '#')
-                printf "${BU}${line}\n### $2\n${line}${NC}\n"
-                has_output=true
-                suppress_newline=true
-                shift 2
-                ;;
-            --line)
-                local char="${2:-#}"
-                local line=$(printf "%80s" | tr ' ' "$char")
-                printf "${line}\n"
-                has_output=true
-                suppress_newline=true
-                shift 2
-                ;;
-            ### Formatting options ###
-            --no-nl|-n)
-                suppress_newline=true
-                shift
-                ;;
-            --right|-r)
-                current_alignment="right"
-                current_position="$2"
-                shift 2
-                ;;
-            --left|-l)
-                current_alignment="left"
-                current_position="$2"
-                shift 2
-                ;;
-            --cr|-cr)
-                if [[ "${2}" =~ ^[0-9]+$ ]]; then
-                    for ((i=0; i<$2; i++)); do
-                        printf "\n"
-                    done
-                    shift 2
-                else
-                    printf "\n"
-                    shift
-                fi
-                has_output=true
-                suppress_newline=true
-                ;;
-            ### Help ###
-            --help|-h)
-                _print_help
-                return 0
-                ;;
-            ### Color detection ###
-            NC|RD|GN|YE|BU|CY|WH|MG)
-                current_color="${!1}"
-                shift
-                ;;
-            ### Regular text ###
-            *)
-                ### Apply color and formatting ###
-                printf "${current_color}"
-                _print_apply_formatting "$1" "$current_position" "$current_alignment"
-                printf "${NC}"
-                has_output=true
-                shift
-                ;;
-        esac
-    done
-    
-    ### Add standard newline unless suppressed ###
-    if [ "$has_output" = "true" ] && [ "$suppress_newline" = "false" ]; then
-        printf "\n"
-    fi
+   ### Local variables ###
+   local output_buffer=""
+   local current_color="${NC}"
+   local current_alignment="left"
+   local current_position=""
+   local newlines=0
+   local suppress_newline=false
+   local has_output=false
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_apply_formatting() {
+       local text="$1"
+       local pos="$2"
+       local align="$3"
+       
+       ### Calculate position based on alignment ###
+       if [ "$align" = "right" ] && [ -n "$pos" ]; then
+           ### Right align: position is where the last character should be ###
+           local text_len=${#text}
+           local start_pos=$((pos - text_len + 1))
+           [ $start_pos -lt 1 ] && start_pos=1
+           printf "\033[${start_pos}G%s" "$text"
+       elif [ "$align" = "left" ] && [ -n "$pos" ]; then
+           ### Left align: position is where the first character should be ###
+           printf "\033[${pos}G%s" "$text"
+       else
+           ### No positioning, just print ###
+           printf "%s" "$text"
+       fi
+   }
+   
+   # shellcheck disable=SC2317,SC2329  # Function called conditionally within main function
+   _print_help() {
+       ### Try to load help from markdown file ###
+       local help_file="${DOCS_DIR}/help/print.md"
+       
+       if [ -f "$help_file" ]; then
+           ### Parse markdown and display formatted ###
+           while IFS= read -r line; do
+               case "$line" in
+                   "# "*)
+                       echo -e "${BU}${line#\# }${NC}"
+                       ;;
+                   "## "*)
+                       echo -e "${CY}${line#\#\# }${NC}"
+                       ;;
+                   "### "*)
+                       echo -e "${GN}${line#\#\#\# }${NC}"
+                       ;;
+                   "- "*)
+                       echo "  ${line}"
+                       ;;
+                   "\`"*"\`"*)
+                       echo -e "${YE}${line}${NC}"
+                       ;;
+                   "")
+                       echo
+                       ;;
+                   *)
+                       echo "$line"
+                       ;;
+               esac
+           done < "$help_file"
+       else
+           ### Fallback to Inline Help ###
+           local P1="${POS[0]:-4}"
+           local P2="${POS[3]:-35}"
+           
+           print "Usage: show [OPERATION] [OPTIONS]"
+           print --cr
+           print "Operations:"
+
+           ### Fallback to inline help ###
+           printf "Usage: print [OPTIONS] [TEXT]...\n\n"
+           printf "Options:\n"
+           printf "\033[3G%-15s\033[20G%s\n" "COLOR" "Set color (NC, RD, GN, YE, BU, CY, WH, MG)"
+           printf "\033[3G%-15s\033[20G%s\n" "-r POS" "Right align at position"
+           printf "\033[3G%-15s\033[20G%s\n" "-l POS" "Left align at position"
+           printf "\033[3G%-15s\033[20G%s\n" "--cr [N]" "Print N newlines (default: 1)"
+           printf "\033[3G%-15s\033[20G%s\n" "--no-nl, -n" "Suppress automatic newline"
+           printf "\033[3G%-15s\033[20G%s\n" "--help, -h" "Show this help"
+           printf "\nSpecial operations:\n"
+           printf "\033[3G%-20s\033[25G%s\n" "--success MESSAGE" "Print success message"
+           printf "\033[3G%-20s\033[25G%s\n" "--error MESSAGE" "Print error message"
+           printf "\033[3G%-20s\033[25G%s\n" "--warning MESSAGE" "Print warning message"
+           printf "\033[3G%-20s\033[25G%s\n" "--info MESSAGE" "Print info message"
+           printf "\033[3G%-20s\033[25G%s\n" "--header TITLE" "Print header"
+           printf "\033[3G%-20s\033[25G%s\n" "--line [CHAR]" "Print line"
+       fi
+   }
+   
+   ### Parse and execute arguments sequentially ###
+   while [[ $# -gt 0 ]]; do
+       case $1 in
+           ### Special operations ###
+           --success)
+               printf "${GN}${SYMBOL_SUCCESS} $2${NC}\n"
+               has_output=true
+               suppress_newline=true
+               shift 2
+               ;;
+           --error)
+               printf "${RD}${SYMBOL_ERROR} $2${NC}\n" >&2
+               has_output=true
+               suppress_newline=true
+               shift 2
+               ;;
+           --warning)
+               printf "${YE}${SYMBOL_WARNING} $2${NC}\n"
+               has_output=true
+               suppress_newline=true
+               shift 2
+               ;;
+           --info)
+               printf "${CY}${SYMBOL_INFO} $2${NC}\n"
+               has_output=true
+               suppress_newline=true
+               shift 2
+               ;;
+           --header)
+               local line=$(printf "%80s" | tr ' ' '#')
+               printf "${BU}${line}\n### $2\n${line}${NC}\n"
+               has_output=true
+               suppress_newline=true
+               shift 2
+               ;;
+           --line)
+               local char="${2:-#}"
+               local line=$(printf "%80s" | tr ' ' "$char")
+               printf "${line}\n"
+               has_output=true
+               suppress_newline=true
+               shift 2
+               ;;
+           ### Formatting options ###
+           --no-nl|-n)
+               suppress_newline=true
+               shift
+               ;;
+           --right|-r)
+               current_alignment="right"
+               current_position="$2"
+               shift 2
+               ;;
+           --left|-l)
+               current_alignment="left"
+               current_position="$2"
+               shift 2
+               ;;
+           --cr|-cr)
+               if [[ "${2}" =~ ^[0-9]+$ ]]; then
+                   for ((i=0; i<$2; i++)); do
+                       printf "\n"
+                   done
+                   shift 2
+               else
+                   printf "\n"
+                   shift
+               fi
+               has_output=true
+               suppress_newline=true
+               ;;
+           ### Help ###
+           --help|-h)
+               _print_help
+               return 0
+               ;;
+           ### Color detection ###
+           NC|RD|GN|YE|BU|CY|WH|MG)
+               current_color="${!1}"
+               shift
+               ;;
+           ### Regular text ###
+           *)
+               ### Apply color and formatting ###
+               printf "${current_color}"
+               _print_apply_formatting "$1" "$current_position" "$current_alignment"
+               printf "${NC}"
+               has_output=true
+               shift
+               ;;
+       esac
+   done
+   
+   ### Add standard newline unless suppressed ###
+   if [ "$has_output" = "true" ] && [ "$suppress_newline" = "false" ]; then
+       printf "\n"
+   fi
 }
 
 ### Unified log Function for all Logging Operations ###
@@ -675,7 +733,7 @@ show() {
                esac
            done < "$help_file"
        else
-           ### Fallback to inline help ###
+           ### Fallback to Inline Help ###
            local P1="${POS[0]:-4}"
            local P2="${POS[3]:-35}"
            
