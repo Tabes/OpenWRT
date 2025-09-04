@@ -27,15 +27,16 @@ Unified Output Function for formatted Console Output with Colors, Positioning, a
 - --no-nl, -n - Suppress automatic newline
 
 ### Special Operations
-- --success MESSAGE - Print success message with green checkmark
-- --error MESSAGE - Print error message with red X
-- --warning MESSAGE - Print warning message with yellow warning sign
-- --info MESSAGE - Print info message with blue info icon
-- --header TITLE - Print formatted header with borders
-- --line [CHAR] - Print horizontal line (default: #)
+- --success MESSAGE     - Print success message with green checkmark
+- --error MESSAGE       - Print error message with red X
+- --warning MESSAGE     - Print warning message with yellow warning sign
+- --info MESSAGE        - Print info message with blue info icon
+- --header TITLE        - Print formatted header with borders
+- --line [CHAR]         - Print horizontal line (default: #)
 
 ### Help
 - --help, -h - Show this help message
+
 
 ## Examples
 
