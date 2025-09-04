@@ -255,7 +255,7 @@ print() {
                ;;
            ### Help ###
            --help|-h)
-               _print_help
+               show_help "print"
                return 0
                ;;
            ### Color detection ###
