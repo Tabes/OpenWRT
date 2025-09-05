@@ -255,7 +255,7 @@ print() {
                ;;
            ### Help ###
            --help|-h)
-               show_help "print"
+               show_help
                return 0
                ;;
            ### Color detection ###
@@ -593,7 +593,7 @@ log() {
                 shift $#
                 ;;
             --help|-h)
-                show_help "log"
+                show_help
                 return 0
                 ;;
             *)
@@ -611,56 +611,62 @@ log() {
 ################################################################################
 
 ### Universal Help Function for all Functions ###
-################################################################################
-### === HELP SYSTEM === ###
-################################################################################
-
-### Universal Help Function for all Functions ###
 show_help() {
-    local func_name="${1:-${FUNCNAME[1]}}"  # Auto-detect Caller if not provided
+    ### Show help from markdown file ###
+    local func_name="${1:-${FUNCNAME[1]}}"
     local help_file="${HELP_FILE_DIR}/${func_name}.md"
-    
-    if [ -f "$help_file" ]; then
-        ### Parse markdown and display formatted ###
-        local P1="${POS[0]:-4}"
-        local P2="${POS[1]:-8}"
-        local P3="${POS[3]:-35}"
-        
-        while IFS= read -r line; do
-            case "$line" in
-                "# "*)
-                    print --header "${line#\# }"
-                    ;;
-                "## "*)
-                    print CY "${line#\#\# }"
-                    ;;
-                "### "*)
-                    print GN "${line#\#\#\# }"
-                    ;;
-                "- "*)
-                    print -l "$P1" "•" -l "$P2" "${line#- }"
-                    ;;
-                "  - "*)
-                    print -l "$P2" "◦" -l "$P3" "${line#  - }"
-                    ;;
-                "\`\`\`"*)
-                    print YE "$line"
-                    ;;
-                "")
-                    print --cr
-                    ;;
-                *)
-                    print "$line"
-                    ;;
-            esac
-        done < "$help_file"
-    else
-        ### Fallback error message ###
-        print --error "Help documentation for '${func_name}' not found"
-        print "Expected location: ${help_file}"
-        print "Try: ls -la ${HELP_FILE_DIR}/"
+    local line=""
+
+    ### Check if help file exists ###
+    if [ ! -f "${help_file}" ]; then
+        print --error "Help file not found: ${help_file}"
         return 1
     fi
+
+    ### Read file line by line and format content ###
+    while IFS= read -r line; do
+        case "${line}" in
+            "# "*)
+                print --header "${line#\# }"
+                ;;
+            "## "*)
+                print CY "${line#\#\# }"
+                ;;
+            "### "*)
+                print GN "${line#\#\#\# }"
+                ;;
+            "- "*)
+                # Remove the list dash and split the rest of the line by tabs
+                local content="${line#- }"
+                IFS=$'\t' read -r -a parts <<< "${content}"
+                
+                # Manually add spaces before the bullet to align it to POS[0]
+                local bullet_formatted=""
+                # Adjust for the length of the bullet itself
+                printf -v bullet_formatted "%${POS[0]}s" "•"
+                
+                # Start the print command with the formatted bullet and the first part
+                local print_cmd="print \"${bullet_formatted}${parts[0]}\""
+                
+                # Add additional parts if tabs were used
+                for (( i=1; i<${#parts[@]}; i++ )); do
+                    print_cmd="${print_cmd} -l ${POS[${i}]} \"${parts[${i}]}\""
+                done
+                
+                eval "${print_cmd}"
+                ;;
+            "\`\`\`"*)
+                print YE "${line}"
+                ;;
+            "")
+                print --cr
+                ;;
+            *)
+                # Fallback for all other lines
+                print "${line}"
+                ;;
+        esac
+    done < "${help_file}"
 }
 
 ### Unified Show Function for interactive Displays and Menus ###

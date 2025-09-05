@@ -1,3 +1,4 @@
+
 # print - Universal Output Function
 
 ## Usage
@@ -9,7 +10,7 @@ Unified Output Function for formatted Console Output with Colors, Positioning, a
 ## Options
 
 ### Colors
-- NC - No Color (reset)
+• - NC - No Color (reset)
 - RD - Red
 - GN - Green  
 - YE - Yellow
@@ -23,8 +24,8 @@ Unified Output Function for formatted Console Output with Colors, Positioning, a
 - -r POS                - Right align at position
 
 ### Line Control
-- --cr [N]              - Print N newlines (default: 1)
-- --no-nl, -n           - Suppress automatic newline
+- --cr [N]                      - Print N newlines (default: 1)
+- --no-nl, -n                   - Suppress automatic newline
 
 ### Special Operations
 - --success MESSAGE     - Print success message with green checkmark
